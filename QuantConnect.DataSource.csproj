@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>QuantConnect.DataSource</RootNamespace>
+    <AssemblyName>QuantConnect.DataSource.QuiverQuant</AssemblyName>
+    <OutputPath>bin\$(Configuration)</OutputPath>
+    <DocumentationFile>$(OutputPath)\QuantConnect.DataSource.QuiverQuant.xml</DocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QuantConnect.Common" Version="2.5.*" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+    <None Remove="tests\**" />
+    <Compile Remove="DataProcessing\**" />
+    <EmbeddedResource Remove="DataProcessing\**" />
+    <None Remove="DataProcessing\**" />
+    <Compile Remove="QuiverCNBCsAlgorithm.cs" />
+    <Compile Remove="QuiverCNBCsUniverseSelectionAlgorithm.cs" />
+    <Compile Remove="QuiverGovernmentContractsAlgorithm.cs" />
+    <Compile Remove="QuiverGovernmentContractsUniverseSelectionAlgorithm.cs" />
+    <None Remove="QuiverGovernmentContractsAlgorithm.py" />
+    <None Remove="QuiverGovernmentContractsUniverseSelectionAlgorithm.py" />
+    <Compile Remove="QuiverInsiderTradingAlgorithm.cs" />
+    <Compile Remove="QuiverInsiderTradingUniverseSelectionAlgorithm.cs" />
+    <Compile Remove="QuiverLobbyingAlgorithm.cs" />
+    <Compile Remove="QuiverLobbyingUniverseSelectionAlgorithm.cs" />
+    <None Remove="QuiverLobbyingAlgorithm.py" />
+    <None Remove="QuiverLobbyingUniverseSelectionAlgorithm.py" />
+    <Compile Remove="QuiverCongressAlgorithm.cs" />
+    <Compile Remove="QuiverQuantCongressUniverseSelectionAlgorithm.cs" />
+    <None Remove="QuiverQuantCongressUniverseSelectionAlgorithm.py" />
+    <Compile Remove="QuiverWallStreetBetsDataAlgorithm.cs" />
+    <Compile Remove="QuiverWallStreetBetsUniverseSelectionAlgorithm.cs" />
+    <None Remove="QuiverWallStreetBetsDataAlgorithm.py" />
+    <None Remove="QuiverWallStreetBetsUniverseSelectionAlgorithm.py" />
+    <Compile Remove="QuiverWikipediaDataAlgorithm.cs" />
+    <Compile Remove="QuiverWikipediaUniverseSelectionAlgorithm.cs" />
+    <None Remove="QuiverWikipediaDataAlgorithm.py" />
+    <None Remove="QuiverWikipediaUniverseSelectionAlgorithm.py" />
+    <None Remove=".gitignore" />
+  </ItemGroup>
+</Project>
