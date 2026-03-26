@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>QuantConnect.DataLibrary.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\QuiverCNBCsAlgorithm.cs" Link="QuiverCNBCAlgorithm.cs" />
+    <Compile Include="..\QuiverCNBCsUniverseSelectionAlgorithm.cs" Link="QuiverCNBCsUniverseSelectionAlgorithm.cs" />
+    <Compile Include="..\QuiverGovernmentContractsAlgorithm.cs" Link="QuiverGovernmentContractsAlgorithm.cs" />
+    <Compile Include="..\QuiverGovernmentContractsUniverseSelectionAlgorithm.cs" Link="QuiverGovernmentContractsUniverseSelectionAlgorithm.cs" />
+    <Content Include="..\QuiverGovernmentContractsAlgorithm.py" Link="QuiverGovernmentContractsAlgorithm.py" />
+    <Content Include="..\QuiverGovernmentContractsUniverseSelectionAlgorithm.py" Link="QuiverGovernmentContractsUniverseSelectionAlgorithm.py" />
+    <Compile Include="..\QuiverInsiderTradingAlgorithm.cs" Link="QuiverInsiderTradingAlgorithm.cs" />
+    <Compile Include="..\QuiverInsiderTradingUniverseSelectionAlgorithm.cs" Link="QuiverInsiderTradingUniverseSelectionAlgorithm.cs" />
+    <Content Include="..\QuiverInsiderTradingAlgorithm.py" Link="QuiverInsiderTradingAlgorithm.py" />
+    <Content Include="..\QuiverInsiderTradingUniverseSelectionAlgorithm.py" Link="QuiverInsiderTradingUniverseSelectionAlgorithm.py" />
+    <Compile Include="..\QuiverLobbyingAlgorithm.cs" Link="QuiverLobbyingAlgorithm.cs" />
+    <Compile Include="..\QuiverLobbyingUniverseSelectionAlgorithm.cs" Link="QuiverLobbyingUniverseSelectionAlgorithm.cs" />
+    <Content Include="..\QuiverLobbyingAlgorithm.py" Link="QuiverLobbyingAlgorithm.py" />
+    <Content Include="..\QuiverLobbyingUniverseSelectionAlgorithm.py" Link="QuiverLobbyingUniverseSelectionAlgorithm.py" />
+    <Compile Include="..\QuiverCongressAlgorithm.cs" Link="QuiverCongressAlgorithm.cs" />
+    <Compile Include="..\QuiverQuantCongressUniverseSelectionAlgorithm.cs" Link="QuiverQuantCongressUniverseSelectionAlgorithm.cs" />
+    <Content Include="..\QuiverQuantCongressUniverseSelectionAlgorithm.py" Link="QuiverQuantCongressUniverseSelectionAlgorithm.py" />
+    <Compile Include="..\QuiverWallStreetBetsDataAlgorithm.cs" Link="QuiverWallStreetBetsDataAlgorithm.cs" />
+    <Compile Include="..\QuiverWallStreetBetsUniverseSelectionAlgorithm.cs" Link="QuiverWallStreetBetsUniverseSelectionAlgorithm.cs" />
+    <None Include="..\QuiverWallStreetBetsDataAlgorithm.py" Link="QuiverWallStreetBetsDataAlgorithm.py" />
+    <None Include="..\QuiverWallStreetBetsUniverseSelectionAlgorithm.py" Link="QuiverWallStreetBetsUniverseSelectionAlgorithm.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.9.4" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="16.9.4" />
+    <PackageReference Include="QuantConnect.Algorithm" Version="2.5.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="NUnit.Framework.Legacy.ClassicAssert" Alias="Assert" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\QuantConnect.DataSource.csproj" />
+    <ProjectReference Include="..\DataProcessing\DataProcessing.csproj" />
+  </ItemGroup>
+</Project>

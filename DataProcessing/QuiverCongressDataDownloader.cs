@@ -1,0 +1,326 @@
+/*
+ * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+ * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+*/
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
+using Newtonsoft.Json;
+using QuantConnect.Data.Auxiliary;
+using QuantConnect.DataSource;
+using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Logging;
+using QuantConnect.Orders;
+using QuantConnect.Util;
+
+namespace QuantConnect.DataProcessing
+{
+    /// <summary>
+    /// QuiverCongressDataDownloader implementation. https://www.quiverquant.com/
+    /// </summary>
+    public class QuiverCongressDataDownloader : QuiverDataDownloader
+    {
+        public const string VendorDataName = "congresstrading";
+
+        private readonly string _destinationFolder;
+        private readonly string _universeFolder;
+
+        // The dataset starts on Jul 26th 2020
+        // We will timestamp the data with the report date in this case
+        private readonly long _startOfDataSetDateTicks = new DateTime(2020, 07, 26).Ticks;
+
+        // QuiverQuant started to record the "Quiver_Upload_Time" on Aug 28th 2023
+        // All data prior to that date has this value.
+        // We will timestamp the data with the report date in this case
+        private readonly long _startOfUploadDateTicks = new DateTime(2023, 08, 28).Ticks;
+
+        /// <summary>
+        /// Creates a new instance of <see cref="QuiverCongress"/>
+        /// </summary>
+        /// <param name="destinationFolder">The folder where the data will be saved</param>
+        /// <param name="apiKey">The QuiverQuant API key</param>
+        public QuiverCongressDataDownloader(string destinationFolder, string apiKey = null)
+            : base(100, TimeSpan.FromSeconds(60), apiKey)
+        {
+            _destinationFolder = Directory.CreateDirectory(Path.Combine(destinationFolder, VendorDataName)).FullName;
+            _universeFolder = Directory.CreateDirectory(Path.Combine(_destinationFolder, "universe")).FullName;
+        }
+
+        /// <summary>
+        /// Runs the instance of the object.
+        /// </summary>
+        /// <returns>True if process all downloads successfully</returns>
+        public bool Run()
+        {
+            var coverage = 0;
+            var startDate = DateTime.MinValue;
+            var today = DateTime.UtcNow.Date;
+            var stopwatch = Stopwatch.StartNew();
+            Log.Trace($"QuiverCongressDataDownloader.Run(): Start downloading/processing QuiverQuant Congress data");
+
+            try
+            {
+                var rawCongressData = HttpRequester($"bulk/congresstrading?version=v2").SynchronouslyAwaitTaskResult();
+                if (string.IsNullOrWhiteSpace(rawCongressData))
+                {
+                    Log.Trace($@"QuiverCongressDataDownloader.Run(): Received no data - {rawCongressData}");
+                    return false;
+                }
+                Log.Trace($@"QuiverCongressDataDownloader.Run(): Received data");
+
+                var congressTradesByDate = JsonConvert
+                    .DeserializeObject<List<RawQuiverCongressDataPoint>>(rawCongressData, _jsonSerializerSettings)!
+                    .Where(x =>
+                    {
+                        // We don't have enough information to disambiguate whether this transaction,
+                        // known as an "Exchange", is the acquisition or dumping of an asset.
+                        if (x.Transaction == OrderDirection.Hold)
+                        {
+                            return false;
+                        }
+
+                        // Stock are represented by null/empty TickerType or "Stock" or "ST" values
+                        if (!string.IsNullOrWhiteSpace(x.TickerType) && x.TickerType is not ("Stock" or "ST"))
+                        {
+                            return false;
+                        }
+
+                        // Also, ReportDate might be null, but we use it for setting the EndTime
+                        // of the QuiverCongress type. So if it doesn't exist, we don't know
+                        // when the data was made available to us.
+                        if (x.ReportDate == null || x.ReportDate > today)
+                        {
+                            return false;
+                        }
+
+                        if (x.ReportDate.Value.Ticks <= _startOfDataSetDateTicks)
+                        {
+                            x.LastModified = x.UploadDate = x.ReportDate.Value;
+                        }
+
+                        if (x.LastModified == null || x.LastModified.Value.Ticks <= _startOfUploadDateTicks)
+                        {
+                            x.LastModified = x.UploadDate;
+                        }
+
+                        // It's a data bug when the report date is greater than the last modified date
+                        if (x.LastModified == null || x.ReportDate > x.LastModified)
+                        {
+                            x.LastModified = x.ReportDate;
+                        }
+
+                        // The upload date can be greater than report date. It means the report date was incorrect and an update has fixed it
+                        // so we are only fixing the possible null case
+                        if (x.UploadDate == null)
+                        {
+                            x.ReportDate = x.LastModified;
+                        }
+
+                        return x.LastModified != null && x.LastModified < today;
+                    })
+                    .OrderBy(x => x.LastModified.Value)
+                    .GroupBy(x => x.LastModified.Value)
+                    .ToDictionary(kvp => kvp.Key, kvp =>
+                    {
+                        // A Congressperson can make the same trade more than once per day
+                        // To avoid confusion, we will group the same trades and sum their amount
+                        var values = kvp.ToList();
+                        var duplicates = kvp.GroupBy(x => $"{x.Ticker},{x}").Where(x => x.Count() > 1);
+                        foreach (var duplicate in duplicates)
+                        {
+                            var trade = duplicate.FirstOrDefault();
+                            values.RemoveAll(x => duplicate.Key == $"{x.Ticker},{x}");
+                            values.Add(trade);
+                        }
+                        return values;
+                    });
+                
+                var mapFileProvider = new LocalZipMapFileProvider();
+                mapFileProvider.Initialize(new DefaultDataProvider());
+
+                var invalidTickers = new HashSet<string>();
+                var congressTradesByTicker = new Dictionary<string, List<string>>();
+                
+                foreach (var kvp in congressTradesByDate)
+                {
+                    var processDate = kvp.Key;
+                    var universeCsvContents = new List<string>();
+
+                    foreach (var congressTrade in kvp.Value)
+                    {
+                        var ticker = congressTrade.Ticker.Trim().ToUpperInvariant()
+                                .Replace("- DEFUNCT", string.Empty)
+                                .Replace("-DEFUNCT", string.Empty)
+                                .Replace(" ", string.Empty)
+                                .Replace("|", string.Empty)
+                                .Replace("/", ".")
+                                .Replace("-", ".");
+                        
+                        if (!congressTradesByTicker.TryGetValue(ticker, out var _))
+                        {
+                            congressTradesByTicker.Add(ticker, new List<string>());
+                        }
+
+                        var curRow = congressTrade.ToString();
+
+                        congressTradesByTicker[ticker].Add($"{processDate:yyyyMMdd},{curRow}");
+
+                        if (!_canCreateUniverseFiles) continue;
+
+                        var sid = SecurityIdentifier.GenerateEquity(ticker, Market.USA, true, mapFileProvider, processDate);
+                        if (sid.Date.Year < 1998)
+                        {
+                            invalidTickers.Add(ticker);
+                            continue;
+                        }  
+                        universeCsvContents.Add($"{sid},{ticker},{curRow}");
+                    }
+
+                    if (universeCsvContents.Any())
+                    {
+                        SaveContentToFile(_universeFolder, $"{processDate:yyyyMMdd}", universeCsvContents);
+                    }
+                }
+
+                if (invalidTickers.Any())
+                {
+                    foreach (var ticker in invalidTickers)
+                    {
+                        congressTradesByTicker.Remove(ticker);
+                    }
+                    Log.Trace($"QuiverCongressDataDownloader.Run(): Invalid Tickers: {Environment.NewLine}{string.Join(", ", invalidTickers.OrderBy(x => x))}");
+                }
+
+                startDate = congressTradesByDate.FirstOrDefault().Key;
+                coverage = congressTradesByTicker.Count;
+                congressTradesByTicker.DoForEach(kvp => SaveContentToFile(_destinationFolder, kvp.Key, kvp.Value));
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+                return false;
+            }
+
+            Log.Trace($"QuiverCongressDataDownloader.Run(): Coverage: {coverage} securities. Start Date: {startDate:yyyyMMdd}");
+            Log.Trace($"QuiverCongressDataDownloader.Run(): Finished in {stopwatch.Elapsed.ToStringInvariant(null)}");
+            return true;
+        }
+
+        /// <summary>
+        /// Saves contents to disk, deleting existing zip files
+        /// </summary>
+        /// <param name="destinationFolder">Final destination of the data</param>
+        /// <param name="name">File name</param>
+        /// <param name="contents">Contents to write</param>
+        private static void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
+        {
+            static DateTime CustomParseExact(string line) => DateTime.ParseExact(line.Split(',').First(),
+                "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal);
+
+            var lines = new HashSet<string>(contents);
+
+            var finalLines = (destinationFolder.Contains("universe") ?
+                lines.OrderBy(x => x.Split(',').First()) :
+                lines.OrderBy(CustomParseExact)).ToList();
+
+            var finalPath = Path.Combine(destinationFolder, $"{name.ToLowerInvariant()}.csv");
+            File.WriteAllLines(finalPath, finalLines);
+        }
+
+        private class RawQuiverCongressDataPoint : QuiverCongressDataPoint
+        {
+            /// <summary>
+            /// The ticker/symbol for the company
+            /// </summary>
+            [JsonProperty(PropertyName = "Ticker")]
+            public string Ticker { get; set; }
+
+            /// <summary>
+            /// The security type
+            /// </summary>
+            [JsonProperty(PropertyName = "TickerType")]
+            public string TickerType { get; set; }
+
+            /// <summary>
+            /// The trade size range
+            /// </summary>
+            [JsonProperty(PropertyName = "Trade_Size_USD")]
+            public string TradeSizeRange { get; set; }
+
+            /// <summary>
+            /// The date this data was upload to QuiverQuant's database
+            /// </summary>
+            [JsonProperty(PropertyName = "Quiver_Upload_Time")]
+            [JsonConverter(typeof(DateTimeJsonConverter), "yyyy-MM-dd")]
+            public DateTime? UploadDate { get; set; }
+
+            /// <summary>
+            /// The date this data was last modified on QuiverQuant's database
+            /// </summary>
+            [JsonProperty(PropertyName = "last_modified")]
+            [JsonConverter(typeof(DateTimeJsonConverter), "yyyy-MM-dd")]
+            public DateTime? LastModified { get; set; }
+
+            /// <summary>
+            /// Formats a string with the Raw Quiver Congress information.
+            /// This information does not include the amount, since we will use this
+            /// representation to group the trades of the same day, person and direction 
+            /// </summary>
+            public override string ToString()
+            {
+                var (min, max) = (double.MaxValue, double.MinValue);
+                var tradeSizeRange = new StringBuilder();
+                void setRange()
+                {
+                    var size = double.Parse(tradeSizeRange.ToString());
+                    min = Math.Min(min, size);
+                    max = Math.Max(max, size);
+                    tradeSizeRange.Clear();
+                }
+
+                foreach (var c in TradeSizeRange.AsSpan())
+                {
+                    if (char.IsDigit(c))
+                    {
+                        tradeSizeRange.Append(c);
+                    }
+                    else if (c == '-')
+                    {
+                        setRange();
+                    }
+                }
+
+                setRange();
+
+                return string.Join(",",
+                        $"{UploadDate.ToStringInvariant("yyyyMMdd")}",
+                        $"{ReportDate.ToStringInvariant("yyyyMMdd")}",
+                        $"{TransactionDate.ToStringInvariant("yyyyMMdd")}",
+                        $"{Representative.Trim().Replace(",", ";")}",
+                        $"{Transaction}",
+                        min == max ? $"{min}," : $"{min},{max}",
+                        $"{House}",
+                        $"{Party}",
+                        $"{District?.Trim()}",
+                        $"{State.Trim()}"
+                    );
+            }
+        }
+
+    }
+}
