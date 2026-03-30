@@ -19,6 +19,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.DataSource;
@@ -99,6 +100,16 @@ namespace QuantConnect.DataProcessing
                     }
 
                     ticker = ticker.Split(':').Last().Replace("\"", string.Empty).ToUpperInvariant().Trim();
+                    // Strip characters not allowed in tickers (only letters, digits, and mid-string dots are valid)
+                    ticker = Regex.Replace(ticker, @"[^A-Z0-9.]", string.Empty);
+                    ticker = ticker.Trim('.');
+
+                    // Validate: must be non-empty, only letters/digits/dots, dot not at start or end
+                    if (!Regex.IsMatch(ticker, @"^[A-Z0-9][A-Z0-9.]*[A-Z0-9]$") && !Regex.IsMatch(ticker, @"^[A-Z0-9]$"))
+                    {
+                        Log.Trace($"QuiverCNBCDataDownloader.Run(): Skipping invalid ticker '{ticker}' on {processDate:yyyyMMdd}");
+                        continue;
+                    }
 
                     if (!cnbcByTicker.TryGetValue(ticker, out var _))
                     {
