@@ -15,10 +15,12 @@
 */
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
+using NodaTime;
 using QuantConnect.Data;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Orders;
 using static QuantConnect.StringExtensions;
 
@@ -27,8 +29,73 @@ namespace QuantConnect.DataSource
     /// <summary>
     /// Universe Selection helper class for QuiverQuant Congress dataset
     /// </summary>
-    public class QuiverQuantCongressUniverse : QuiverCongress
+    public class QuiverQuantCongressUniverse : BaseDataCollection
     {
+        /// <summary>
+        /// The date the transaction was recorded by QuiverQuant. Value will always exist.
+        /// </summary>
+        public DateTime RecordDate { get; set; }
+
+        /// <summary>
+        /// The date the recorded transaction was updated by QuiverQuant. Alias for EndTime.
+        /// </summary>
+        public DateTime UpdatedAt => EndTime;
+
+        /// <summary>
+        /// The date the transaction was reported. Value will always exist.
+        /// </summary>
+        public DateTime? ReportDate { get; set; }
+
+        /// <summary>
+        /// The date the transaction took place
+        /// </summary>
+        public DateTime TransactionDate { get; set; }
+
+        /// <summary>
+        /// The Representative making the transaction
+        /// </summary>
+        public string Representative { get; set; }
+
+        /// <summary>
+        /// The type of transaction
+        /// </summary>
+        public OrderDirection Transaction { get; set; }
+
+        /// <summary>
+        /// The amount of the transaction (in USD). The Representative can report a range (see <see cref="MaximumAmount"/>).
+        /// </summary>
+        public decimal? Amount { get; set; }
+
+        /// <summary>
+        /// The maximum amount of the transaction (in USD). The Representative can report a range (see <see cref="Amount"/>).
+        /// </summary>
+        public decimal? MaximumAmount { get; set; }
+
+        /// <summary>
+        /// The Chamber of Congress that the trader belongs to
+        /// </summary>
+        public Congress House { get; set; }
+
+        /// <summary>
+        /// The political party that the trader belongs to
+        /// </summary>
+        public Party Party { get; set; }
+
+        /// <summary>
+        /// The district that the trader belongs to (null or empty for Senators)
+        /// </summary>
+        public string District { get; set; }
+
+        /// <summary>
+        /// The state that the trader belongs to
+        /// </summary>
+        public string State { get; set; }
+
+        /// <summary>
+        /// Time the data became available
+        /// </summary>
+        public override DateTime EndTime => Time.AddDays(1);
+
         /// <summary>
         /// Return the URL string source of the file. This will be converted to a stream
         /// </summary>
@@ -66,12 +133,12 @@ namespace QuantConnect.DataSource
             var amount = csv[7].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
             var maximumAmount = csv[8].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
 
-            return new QuiverCongressDataPoint
+            return new QuiverQuantCongressUniverse
             {
                 RecordDate = Parse.DateTimeExact(csv[2], "yyyyMMdd"),
                 ReportDate = Parse.DateTimeExact(csv[3], "yyyyMMdd"),
                 TransactionDate = Parse.DateTimeExact(csv[4], "yyyyMMdd"),
-                Representative = csv[5].Replace(";",","),
+                Representative = csv[5].Replace(";", ","),
                 Transaction = (OrderDirection)Enum.Parse(typeof(OrderDirection), csv[6], true),
                 Amount = amount,
                 MaximumAmount = maximumAmount,
@@ -86,18 +153,51 @@ namespace QuantConnect.DataSource
         }
 
         /// <summary>
+        /// Indicates whether the data is sparse.
+        /// If true, we disable logging for missing files
+        /// </summary>
+        /// <returns>true</returns>
+        public override bool IsSparseData()
+        {
+            return true;
+        }
+
+        /// <summary>
         /// Converts the instance to string
         /// </summary>
         public override string ToString()
         {
-            return Invariant($"{EndTime:yyyyMMdd}: {string.Join(",", Data.Select(x => x.ToString()))}");
+            return Invariant($"{Symbol}({EndTime:yyyyMMdd}) :: ") +
+                   Invariant($"Representative: {Representative} ") +
+                   Invariant($"House: {House} ") +
+                   Invariant($"Transaction: {Transaction} ") +
+                   Invariant($"Amount: {Amount}");
         }
 
         /// <summary>
-        /// Indicates if there is support for mapping
+        /// Gets the default resolution for this data and security type
         /// </summary>
-        /// <returns>True indicates mapping should be used</returns>
-        public override bool RequiresMapping() => false;
+        public override Resolution DefaultResolution()
+        {
+            return Resolution.Daily;
+        }
+
+        /// <summary>
+        /// Gets the supported resolution for this data and security type
+        /// </summary>
+        public override List<Resolution> SupportedResolutions()
+        {
+            return DailyResolution;
+        }
+
+        /// <summary>
+        /// Specifies the data time zone for this data type. This is useful for custom data types
+        /// </summary>
+        /// <returns>The <see cref="T:NodaTime.DateTimeZone" /> of this data type</returns>
+        public override DateTimeZone DataTimeZone()
+        {
+            return TimeZones.Utc;
+        }
 
         /// <summary>
         /// Clones the data
@@ -109,8 +209,20 @@ namespace QuantConnect.DataSource
             {
                 Symbol = Symbol,
                 Time = Time,
-                EndTime = EndTime,
                 Data = Data,
+                Value = Value,
+
+                RecordDate = RecordDate,
+                ReportDate = ReportDate,
+                TransactionDate = TransactionDate,
+                Representative = Representative,
+                Transaction = Transaction,
+                Amount = Amount,
+                MaximumAmount = MaximumAmount,
+                House = House,
+                Party = Party,
+                District = District,
+                State = State,
             };
         }
     }
