@@ -37,13 +37,13 @@ namespace QuantConnect.Algorithm.CSharp
             // add a custom universe data source (defaults to usa-equity)
             var universe = AddUniverse<QuiverQuantCongressUniverse>(data =>
             {
-                foreach (QuiverCongressDataPoint datum in data)
+                foreach (QuiverQuantCongressUniverse datum in data)
                 {
                     Log($"{datum.Symbol},{datum.Representative},{datum.Amount},{datum.Transaction}");
                 }
 
                 // define our selection criteria
-                return from QuiverCongressDataPoint d in data
+                return from QuiverQuantCongressUniverse d in data
                        where d.Amount > 200000 && d.Transaction == OrderDirection.Buy
                        select d.Symbol;
             });
