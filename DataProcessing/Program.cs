@@ -43,7 +43,7 @@ namespace QuantConnect.DataProcessing
             var processingDateValue = Config.Get("processing-date", Environment.GetEnvironmentVariable("QC_DATAFLEET_DEPLOYMENT_DATE"))
                 ?? DateTime.UtcNow.AddDays(-1).ToString("yyyyMMdd");
             var processingDate = Parse.DateTimeExact(processingDateValue, "yyyyMMdd");
-            var processingDateLookback = Config.GetInt("processing-date-lookback", 0);
+            var processingDateLookback = Config.GetInt("processing-date-lookback", 5);
             var processingStartDate = processingDate.AddDays(-processingDateLookback);
 
             switch (dataset)
