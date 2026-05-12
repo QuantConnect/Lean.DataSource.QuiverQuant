@@ -23,6 +23,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.DataSource;
+using QuantConnect.DataSource.QuiverQuant;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Logging;
 using QuantConnect.Util;
@@ -39,6 +40,7 @@ namespace QuantConnect.DataProcessing
         private readonly string _destinationFolder;
         private readonly string _universeFolder;
         private readonly string _processedDataDirectory;
+        private readonly Dictionary<string, HashSet<string>> _cnbcByTicker = [];
 
         /// <summary>
         /// Creates a new instance of <see cref="QuiverCNBC"/>
@@ -84,16 +86,10 @@ namespace QuantConnect.DataProcessing
 
                 var cnbcByDate = JsonConvert.DeserializeObject<List<RawCNBC>>(quiverCnbcData, _jsonSerializerSettings);
 
-                var cnbcByTicker = new Dictionary<string, List<string>>();
-                var universeCsvContents = new List<string>();
-
-                var mapFileProvider = new LocalZipMapFileProvider();
-                mapFileProvider.Initialize(new DefaultDataProvider());
-
                 foreach (var cnbc in cnbcByDate)
                 {
                     var ticker = cnbc.Ticker;
-                    if (ticker == null) 
+                    if (ticker == null)
                     {
                         Log.Error($"QuiverCNBCDataDownloader.Run(): Null value for Ticker on {processDate:yyyyMMdd}");
                         continue;
@@ -111,29 +107,23 @@ namespace QuantConnect.DataProcessing
                         continue;
                     }
 
-                    if (!cnbcByTicker.TryGetValue(ticker, out var _))
+                    var note = SanitizeCsv(cnbc.Notes);
+                    var traders = SanitizeCsv(cnbc.Traders);
+                    var curRow = $"{cnbc.Direction.ToCsv()},{traders},{note}";
+                    var uploadDate = cnbc.UploadDate?.Date ?? processDate;
+                    // csv[0] is always the uploadDate. csv[1] (adviceDate) is omitted when it equals uploadDate;
+                    // Reader falls back to uploadedDate in that case.
+                    var adviceDateCol = uploadDate == processDate
+                        ? string.Empty
+                        : $"{processDate:yyyyMMdd}";
+                    var line = $"{uploadDate:yyyyMMdd},{adviceDateCol},{curRow}";
+
+                    if (!_cnbcByTicker.TryGetValue(ticker, out var lines))
                     {
-                        cnbcByTicker.Add(ticker, new List<string>());
+                        _cnbcByTicker[ticker] = lines = [];
                     }
-
-                    var note = cnbc.Notes != null ? cnbc.Notes.Replace(Environment.NewLine, string.Empty).Trim() : null;
-                    var curRow = $"{note},{cnbc.Direction},{cnbc.Traders.Trim()}";
-                    cnbcByTicker[ticker].Add($"{processDate:yyyyMMdd},{curRow}");
-
-                    var sid = SecurityIdentifier.GenerateEquity(ticker, Market.USA, true, mapFileProvider, processDate);
-                    universeCsvContents.Add($"{sid},{ticker},{curRow}");
+                    lines.Add(line);
                 }
-
-                if (!_canCreateUniverseFiles)
-                {
-                    return false;
-                }
-                else if (universeCsvContents.Any())
-                {
-                    SaveContentToFile(_universeFolder, $"{processDate:yyyyMMdd}", universeCsvContents);
-                }
-
-                cnbcByTicker.DoForEach(kvp => SaveContentToFile(_destinationFolder, kvp.Key, kvp.Value));
             }
             catch (Exception e)
             {
@@ -146,41 +136,130 @@ namespace QuantConnect.DataProcessing
         }
 
         /// <summary>
-        /// Saves contents to disk, deleting existing zip files
+        /// Writes every accumulated per-ticker batch to disk, merging with any pre-existing file.
+        /// </summary>
+        /// <returns>True on success</returns>
+        public bool Flush()
+        {
+            try
+            {
+                foreach (var kvp in _cnbcByTicker)
+                {
+                    SaveContentToFile(_destinationFolder, kvp.Key, kvp.Value);
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Regenerates the universe files keyed by upload date by reading every per-ticker file.
+        /// </summary>
+        /// <returns>True if the universe files were regenerated successfully</returns>
+        public bool ProcessUniverse()
+        {
+            if (!_canCreateUniverseFiles)
+            {
+                Log.Trace($"QuiverCNBCDataDownloader.ProcessUniverse(): Map files not available, skipping universe generation");
+                return false;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            Log.Trace($"QuiverCNBCDataDownloader.ProcessUniverse(): Start regenerating universe files by upload date");
+
+            try
+            {
+                var mapFileProvider = new LocalZipMapFileProvider();
+                mapFileProvider.Initialize(new DefaultDataProvider());
+
+                Dictionary<DateTime, HashSet<string>> dataByUploadDate = [];
+
+                void processFile(string filePath)
+                {
+                    var ticker = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
+                    foreach (var line in File.ReadAllLines(filePath))
+                    {
+                        var firstComma = line.IndexOf(',');
+                        if (firstComma <= 0) continue;
+
+                        var uploadDateStr = line[..firstComma];
+                        if (!DateTime.TryParseExact(uploadDateStr, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var uploadDate))
+                        {
+                            continue;
+                        }
+                        var rest = line[(firstComma + 1)..];
+
+                        if (!dataByUploadDate.TryGetValue(uploadDate, out var data))
+                        {
+                            dataByUploadDate[uploadDate] = data = [];
+                        }
+
+                        var sid = SecurityIdentifier.GenerateEquity(ticker, Market.USA, true, mapFileProvider, uploadDate);
+                        data.Add($"{sid},{ticker},{rest}");
+                    }
+                }
+
+                if (Directory.Exists(_processedDataDirectory))
+                {
+                    Directory.EnumerateFiles(_processedDataDirectory, "*.csv").DoForEach(processFile);
+                }
+                Directory.EnumerateFiles(_destinationFolder, "*.csv").DoForEach(processFile);
+
+                dataByUploadDate.DoForEach(kvp =>
+                {
+                    var filePath = Path.Combine(_universeFolder, $"{kvp.Key:yyyyMMdd}.csv");
+                    File.WriteAllLines(filePath, kvp.Value.OrderBy(x => x));
+                });
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+                return false;
+            }
+
+            Log.Trace($"QuiverCNBCDataDownloader.ProcessUniverse(): Finished in {stopwatch.Elapsed.ToStringInvariant(null)}");
+            return true;
+        }
+
+        /// <summary>
+        /// Saves per-ticker contents to disk, merging with any pre-existing file
         /// </summary>
         /// <param name="destinationFolder">Final destination of the data</param>
         /// <param name="name">file name</param>
         /// <param name="contents">Contents to write</param>
+        private static string SanitizeCsv(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+            return value.Replace(",", string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
+        }
+
         private void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
         {
             name = name.ToLowerInvariant();
             var finalPath = Path.Combine(destinationFolder, $"{name}.csv");
-            string filePath;
+            var filePath = Path.Combine(_processedDataDirectory, $"{name}.csv");
 
-            if (destinationFolder.Contains("universe"))
+            HashSet<string> lines = [.. contents];
+            foreach (var path in new[] { filePath, finalPath })
             {
-                filePath = Path.Combine(_processedDataDirectory, "universe", $"{name}.csv");
-            }
-            else
-            {
-                filePath = Path.Combine(_processedDataDirectory, $"{name}.csv");
-            }
-
-            var finalFileExists = File.Exists(filePath);
-
-            var lines = new HashSet<string>(contents);
-            if (finalFileExists)
-            {
-                foreach (var line in File.ReadAllLines(filePath))
+                if (File.Exists(path))
                 {
-                    lines.Add(line);
+                    foreach (var line in File.ReadAllLines(path))
+                    {
+                        lines.Add(line);
+                    }
                 }
             }
 
-            var finalLines = destinationFolder.Contains("universe") ? 
-                lines.OrderBy(x => x.Split(',').First()).ToList() :
-                lines
-                .OrderBy(x => DateTime.ParseExact(x.Split(',').First(), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal))
+            var finalLines = lines
+                .OrderBy(x => DateTime.ParseExact(x.Split(',')[0], "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal))
                 .ToList();
 
             File.WriteAllLines(finalPath, finalLines);
@@ -200,6 +279,13 @@ namespace QuantConnect.DataProcessing
             /// </summary>
             [JsonProperty(PropertyName = "Ticker")]
             public string Ticker { get; set; }
+
+            /// <summary>
+            /// The date this data was uploaded to QuiverQuant's database
+            /// </summary>
+            [JsonProperty(PropertyName = "upload_time")]
+            [JsonConverter(typeof(DateTimeJsonConverter), "yyyy-MM-dd")]
+            public DateTime? UploadDate { get; set; }
         }
 
     }

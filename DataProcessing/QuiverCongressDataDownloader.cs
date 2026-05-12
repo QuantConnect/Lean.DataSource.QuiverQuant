@@ -57,7 +57,7 @@ namespace QuantConnect.DataProcessing
         public QuiverCongressDataDownloader(string destinationFolder, string apiKey = null)
             : base(100, TimeSpan.FromSeconds(60), apiKey)
         {
-            _destinationFolder = Directory.CreateDirectory(Path.Combine(destinationFolder, VendorDataName)).FullName;
+            _destinationFolder = Directory.CreateDirectory(Path.Combine(destinationFolder, VendorName, VendorDataName)).FullName;
             _universeFolder = Directory.CreateDirectory(Path.Combine(_destinationFolder, "universe")).FullName;
         }
 

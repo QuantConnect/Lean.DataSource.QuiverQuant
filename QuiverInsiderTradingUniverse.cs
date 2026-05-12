@@ -21,6 +21,7 @@ using System.IO;
 using NodaTime;
 using QuantConnect.Data;
 using QuantConnect.Data.UniverseSelection;
+using QuantConnect.DataSource.QuiverQuant;
 using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.DataSource
@@ -30,32 +31,75 @@ namespace QuantConnect.DataSource
     /// </summary>
     public class QuiverInsiderTradingUniverse : BaseDataCollection
     {
-        private static readonly TimeSpan _period = TimeSpan.FromDays(1);
-
         /// <summary>
-        /// Name
+        /// Transaction date as reported on SEC Form 4
         /// </summary>
-        public string Name { get; set; }
+        public DateTime? Date { get; set; }
 
         /// <summary>
-        /// Shares amount in transaction
+        /// Time the transaction was filed and became publicly available
         /// </summary>
-        public decimal? Shares { get; set; }
+        public DateTime? FileDate { get; set; }
 
         /// <summary>
-        /// PricePerShare of transaction
+        /// Type of transaction (SEC Form 4 code)
+        /// </summary>
+        public TransactionCode TransactionCode { get; set; }
+
+        /// <summary>
+        /// Reported price per share transacted
         /// </summary>
         public decimal? PricePerShare { get; set; }
 
         /// <summary>
-        /// Shares Owned after transcation
+        /// Number of shares transacted
+        /// </summary>
+        public decimal? Shares { get; set; }
+
+        /// <summary>
+        /// Number of shares owned by insider following the transaction
         /// </summary>
         public decimal? SharesOwnedFollowing { get; set; }
 
         /// <summary>
-        /// Time the data became available
+        /// Indicates whether transaction was share acquisition or disposal
         /// </summary>
-        public override DateTime EndTime => Time + _period;
+        public AcquiredDisposedCode AcquiredDisposedCode { get; set; }
+
+        /// <summary>
+        /// Whether the security is held directly or indirectly
+        /// </summary>
+        public OwnershipType DirectOrIndirectOwnership { get; set; }
+
+        /// <summary>
+        /// Corporate title of the transactor
+        /// </summary>
+        public string OfficerTitle { get; set; }
+
+        /// <summary>
+        /// Whether the transactor is a director of the company
+        /// </summary>
+        public bool? IsDirector { get; set; }
+
+        /// <summary>
+        /// Whether the transactor is an officer of the company
+        /// </summary>
+        public bool? IsOfficer { get; set; }
+
+        /// <summary>
+        /// Whether the transactor is a 10% owner of the company
+        /// </summary>
+        public bool? IsTenPercentOwner { get; set; }
+
+        /// <summary>
+        /// Whether the transactor is not a director, officer, or 10% owner
+        /// </summary>
+        public bool? IsOther { get; set; }
+
+        /// <summary>
+        /// Time the data becomes available to the algorithm
+        /// </summary>
+        public override DateTime EndTime => Time.AddDays(1);
 
         /// <summary>
         /// Return the URL string source of the file. This will be converted to a stream
@@ -92,19 +136,25 @@ namespace QuantConnect.DataSource
         {
             var csv = line.Split(',');
 
-            var shares = csv[3].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
-            var price = csv[4].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
-            var sharesAfter = csv[5].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
-            
+            var price = csv[5].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
+
             return new QuiverInsiderTradingUniverse
             {
-                Time = date,
-                Name = csv[2],
-                Shares = shares,
-                PricePerShare = price,
-                SharesOwnedFollowing = sharesAfter,
-
+                Time = date.AddDays(-1),
                 Symbol = new Symbol(SecurityIdentifier.Parse(csv[0]), csv[1]),
+                FileDate = (csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMddHHmmss")) ?? date).AddDays(-1),
+                Date = csv[3].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")),
+                TransactionCode = QuiverQuantCsvExtensions.ToTransactionCode(csv[4]),
+                PricePerShare = price,
+                Shares = csv[6].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
+                SharesOwnedFollowing = csv[7].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
+                AcquiredDisposedCode = QuiverQuantCsvExtensions.ToAcquiredDisposedCode(csv[8]),
+                DirectOrIndirectOwnership = QuiverQuantCsvExtensions.ToOwnershipType(csv[9]),
+                OfficerTitle = csv[10],
+                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[11]),
+                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
+                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
+                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
                 Value = price ?? 0
             };
         }
@@ -115,10 +165,19 @@ namespace QuantConnect.DataSource
         public override string ToString()
         {
             return Invariant($"{Symbol}({Time}) :: ") +
-                   Invariant($"Name: {string.Join(';', Name)} ") +
-                   Invariant($"Shares: {Shares} ") +
+                   Invariant($"Date: {Date} ") +
+                   Invariant($"FileDate: {FileDate} ") +
+                   Invariant($"TransactionCode: {TransactionCode} ") +
                    Invariant($"PricePerShare: {PricePerShare} ") +
-                   Invariant($"SharesOwnedFollowing: {SharesOwnedFollowing}");
+                   Invariant($"Shares: {Shares} ") +
+                   Invariant($"SharesOwnedFollowing: {SharesOwnedFollowing} ") +
+                   Invariant($"AcquiredDisposedCode: {AcquiredDisposedCode} ") +
+                   Invariant($"DirectOrIndirectOwnership: {DirectOrIndirectOwnership} ") +
+                   Invariant($"OfficerTitle: {OfficerTitle} ") +
+                   Invariant($"IsDirector: {IsDirector} ") +
+                   Invariant($"IsOfficer: {IsOfficer} ") +
+                   Invariant($"IsTenPercentOwner: {IsTenPercentOwner} ") +
+                   Invariant($"IsOther: {IsOther}");
         }
 
         /// <summary>
@@ -128,10 +187,19 @@ namespace QuantConnect.DataSource
         {
             return new QuiverInsiderTradingUniverse()
             {
-                Name = Name,
-                Shares = Shares,
+                Date = Date,
+                FileDate = FileDate,
+                TransactionCode = TransactionCode,
                 PricePerShare = PricePerShare,
+                Shares = Shares,
                 SharesOwnedFollowing = SharesOwnedFollowing,
+                AcquiredDisposedCode = AcquiredDisposedCode,
+                DirectOrIndirectOwnership = DirectOrIndirectOwnership,
+                OfficerTitle = OfficerTitle,
+                IsDirector = IsDirector,
+                IsOfficer = IsOfficer,
+                IsTenPercentOwner = IsTenPercentOwner,
+                IsOther = IsOther,
                 Data = Data,
                 Symbol = Symbol,
                 Time = Time,
@@ -160,7 +228,7 @@ namespace QuantConnect.DataSource
         /// <returns>The <see cref="T:NodaTime.DateTimeZone" /> of this data type</returns>
         public override DateTimeZone DataTimeZone()
         {
-            return TimeZones.Chicago;
+            return TimeZones.Utc;
         }
     }
 }

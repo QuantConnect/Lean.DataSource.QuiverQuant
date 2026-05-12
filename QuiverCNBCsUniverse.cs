@@ -25,17 +25,15 @@ using QuantConnect.Data.UniverseSelection;
 namespace QuantConnect.DataSource
 {
     /// <summary>
-    /// Universe Selection helper class for QuiverQuant Congress dataset
+    /// Universe Selection helper class for QuiverQuant CNBC dataset
     /// </summary>
     public class QuiverCNBCsUniverse : BaseDataCollection
     {
-        private static readonly TimeSpan _period = TimeSpan.FromDays(1);
-
         /// <summary>
         /// Extra Information
         /// </summary>
         public string Notes { get; set; }
-        
+
         /// <summary>
         /// Direction of trade
         /// </summary>
@@ -47,9 +45,14 @@ namespace QuantConnect.DataSource
         public string Traders { get; set; }
 
         /// <summary>
+        /// Date the trader issued the stock advice on CNBC
+        /// </summary>
+        public DateTime AdviceDate { get; set; }
+
+        /// <summary>
         /// Time the data became available
         /// </summary>
-        public override DateTime EndTime => Time + _period;
+        public override DateTime EndTime => Time.AddDays(1);
 
         /// <summary>
         /// Return the URL string source of the file. This will be converted to a stream
@@ -89,10 +92,11 @@ namespace QuantConnect.DataSource
             return new QuiverCNBCsUniverse
             {
                 Symbol = new Symbol(SecurityIdentifier.Parse(csv[0]), csv[1]),
-                Time =  date,
-                Notes = csv[2],
-                Direction = (OrderDirection)Enum.Parse(typeof(OrderDirection), csv[3], true),
+                Time = date.AddDays(-1),
+                AdviceDate = (csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? date).AddDays(-1),
+                Direction = QuiverQuant.QuiverQuantCsvExtensions.ToOrderDirection(csv[3]),
                 Traders = csv[4],
+                Notes = csv.Length > 5 ? csv[5] : string.Empty,
             };
         }
 
@@ -150,6 +154,7 @@ namespace QuantConnect.DataSource
                 Time = Time,
                 Data = Data,
 
+                AdviceDate = AdviceDate,
                 Notes = Notes,
                 Direction = Direction,
                 Traders = Traders

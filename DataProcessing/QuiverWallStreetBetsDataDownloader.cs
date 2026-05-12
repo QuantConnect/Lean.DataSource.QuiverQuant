@@ -46,7 +46,7 @@ namespace QuantConnect.DataProcessing
         public QuiverWallStreetBetsDataDownloader(string destinationFolder, string apiKey = null)
             : base(10, TimeSpan.FromSeconds(1.1), apiKey)
         {
-            _destinationFolder = Path.Combine(destinationFolder, "alternative", VendorName, VendorDataName);
+            _destinationFolder = Path.Combine(destinationFolder, VendorName, VendorDataName);
             _universeFolder = Path.Combine(_destinationFolder, "universe");
 
             Directory.CreateDirectory(_destinationFolder);

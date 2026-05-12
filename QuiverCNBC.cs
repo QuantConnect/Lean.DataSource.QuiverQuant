@@ -28,8 +28,6 @@ namespace QuantConnect.DataSource
     /// </summary>
     public class QuiverCNBC : BaseData
     {
-        private static readonly TimeSpan _period = TimeSpan.FromDays(1);
-
         /// <summary>
         /// Contract description
         /// </summary>
@@ -50,9 +48,14 @@ namespace QuantConnect.DataSource
         public string Traders { get; set; }
 
         /// <summary>
+        /// Date the trader issued the stock advice on CNBC
+        /// </summary>
+        public DateTime AdviceDate { get; set; }
+
+        /// <summary>
         /// Time the data became available
         /// </summary>
-        public override DateTime EndTime => Time + _period;
+        public override DateTime EndTime => Time.AddDays(1);
 
         /// <summary>
         /// Parses the data from the line provided and loads it into LEAN
@@ -66,16 +69,16 @@ namespace QuantConnect.DataSource
         {
             var csv = line.Split(',');
 
-            var parsedDate = Parse.DateTimeExact(csv[0], "yyyyMMdd");
+            var uploadedDate = Parse.DateTimeExact(csv[0], "yyyyMMdd");
 
             return new QuiverCNBC
             {
                 Symbol = config.Symbol,
-                Notes = csv[1],
-                Direction = (OrderDirection)Enum.Parse(typeof(OrderDirection), csv[2], true),
+                Time = uploadedDate.AddDays(-1),
+                AdviceDate = (csv[1].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? uploadedDate).AddDays(-1),
+                Direction = QuiverQuant.QuiverQuantCsvExtensions.ToOrderDirection(csv[2]),
                 Traders = csv[3],
-
-                Time = parsedDate
+                Notes = csv.Length > 4 ? csv[4] : string.Empty,
             };
         }
 
@@ -89,6 +92,7 @@ namespace QuantConnect.DataSource
             {
                 Symbol = Symbol,
                 Time = Time,
+                AdviceDate = AdviceDate,
                 Notes = Notes,
                 Direction = Direction,
                 Traders = Traders,
