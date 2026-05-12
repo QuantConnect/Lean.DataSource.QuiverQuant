@@ -19,9 +19,11 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.DataSource;
+using QuantConnect.DataSource.QuiverQuant;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Logging;
 using QuantConnect.Util;
@@ -38,6 +40,8 @@ namespace QuantConnect.DataProcessing
         private readonly string _destinationFolder;
         private readonly string _universeFolder;
         private readonly string _processedDataDirectory;
+        private readonly Dictionary<string, HashSet<string>> _insiderTradingByTicker = [];
+
         private static readonly List<char> _defunctDelimiters = new()
         {
             '-',
@@ -69,33 +73,14 @@ namespace QuantConnect.DataProcessing
         }
 
         /// <summary>
-        /// Runs the instance of the object with a given date.
+        /// Fetches a single day of insider trading data and accumulates it per-ticker in memory.
         /// </summary>
-        /// <param name="processingStartDate">First date of data to be fetched and processed</param>
-        /// <param name="processingEndDate">Last date of data to be fetched and processed</param>
-        /// <returns>True if process last downloads successfully</returns>
-        public bool Run(DateTime processingStartDate, DateTime processingEndDate)
-        {
-            var success = false;
-            
-            for (var processDate= processingStartDate; processDate<= processingEndDate; processDate = processDate.AddDays(1))
-            {
-                success = Run(processDate);
-            }
-
-            return success;
-        }
-
-        /// <summary>
-        /// Runs the instance of the object with a given date.
-        /// </summary>
-        /// <param name="processDate">The date of data to be fetched and processed</param>
-        /// <returns>True if process all downloads successfully</returns>
+        /// <param name="processDate">The date of data to be fetched</param>
+        /// <returns>True if the day was fetched and parsed successfully</returns>
         public bool Run(DateTime processDate)
         {
-            var symbolsProcessed = new List<string>();
             var stopwatch = Stopwatch.StartNew();
-            Log.Trace($"QuiverInsiderTradingDataDownloader.Run(): Start downloading/processing QuiverQuant Insider Trading data");
+            Log.Trace($"QuiverInsiderTradingDataDownloader.Run(): Start downloading QuiverQuant Insider Trading data for {processDate:yyyy-MM-dd}");
 
             var today = DateTime.UtcNow.Date;
             try
@@ -105,74 +90,64 @@ namespace QuantConnect.DataProcessing
                     Log.Trace($"Encountered data from invalid date: {processDate:yyyy-MM-dd} - Skipping");
                     return false;
                 }
-                
+
                 var quiverInsiderTradingData = HttpRequester($"live/insiders?date={processDate:yyyyMMdd}").SynchronouslyAwaitTaskResult();
                 if (string.IsNullOrWhiteSpace(quiverInsiderTradingData))
                 {
-                    // We've already logged inside HttpRequester
                     return false;
                 }
 
                 var insiderTradingByDate = JsonConvert.DeserializeObject<List<RawInsiderTrading>>(quiverInsiderTradingData, _jsonSerializerSettings);
-
-                var insiderTradingByTicker = new Dictionary<string, List<string>>();
-                var universeCsvContents = new List<string>();
-
-                var mapFileProvider = new LocalZipMapFileProvider();
-                mapFileProvider.Initialize(new DefaultDataProvider());
 
                 foreach (var insiderTrade in insiderTradingByDate)
                 {
                     var quiverTicker = insiderTrade.Ticker;
                     if (quiverTicker == null) continue;
 
-                    if (!TryNormalizeDefunctTicker(quiverTicker, out var tickerList))
+                    if (insiderTrade.Uploaded == null)
                     {
-                        Log.Error(
-                            $"QuiverInsiderTradingDataDownloader.Run(): Defunct ticker {quiverTicker} is unable to be parsed. Continuing...");
+                        Log.Trace($"QuiverInsiderTradingDataDownloader.Run(): Skipping row with null Uploaded for ticker {quiverTicker} on {processDate:yyyyMMdd}");
                         continue;
                     }
 
-                    foreach (var ticker in tickerList)
+                    if (!TryNormalizeDefunctTicker(quiverTicker, out var tickerList))
                     {
-                        var sid = default(SecurityIdentifier);
-                        try
+                        Log.Error($"QuiverInsiderTradingDataDownloader.Run(): Defunct ticker {quiverTicker} is unable to be parsed. Continuing...");
+                        continue;
+                    }
+
+                    var uploadedDate = insiderTrade.Uploaded.Value.Date;
+                    // Omit fileDate when its calendar day matches uploaded. Reader falls back to uploadedDate,
+                    // preserving the day but dropping intraday precision (acceptable trade-off for storage).
+                    var fileDate = insiderTrade.FileDate?.Date == uploadedDate
+                        ? string.Empty
+                        : insiderTrade.FileDate?.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) ?? string.Empty;
+                    var transactionDate = insiderTrade.Date?.ToString("yyyyMMdd", CultureInfo.InvariantCulture) ?? string.Empty;
+                    var officerTitle = SanitizeCsv(insiderTrade.OfficerTitle);
+                    var transactionCode = insiderTrade.TransactionCode.ToCsv();
+                    var ownership = insiderTrade.DirectOrIndirectOwnership.ToCsv();
+                    var acquiredDisposed = insiderTrade.AcquiredDisposedCode.ToCsv();
+
+                    var line = $"{uploadedDate:yyyyMMdd},{fileDate},{transactionDate}," +
+                               $"{transactionCode},{insiderTrade.PricePerShare},{insiderTrade.Shares},{insiderTrade.SharesOwnedFollowing}," +
+                               $"{acquiredDisposed},{ownership},{officerTitle}," +
+                               $"{insiderTrade.IsDirector.ToCsv()},{insiderTrade.IsOfficer.ToCsv()},{insiderTrade.IsTenPercentOwner.ToCsv()},{insiderTrade.IsOther.ToCsv()}";
+
+                    foreach (var rawTicker in tickerList)
+                    {
+                        var ticker = Regex.Replace(rawTicker, @"[^A-Z0-9.]", string.Empty).Trim('.');
+                        if (!Regex.IsMatch(ticker, @"^[A-Z0-9][A-Z0-9.]*[A-Z0-9]$") && !Regex.IsMatch(ticker, @"^[A-Z0-9]$"))
                         {
-                            sid = SecurityIdentifier.GenerateEquity(ticker, Market.USA, true, mapFileProvider, processDate);
-                        }
-                        catch (Exception)
-                        {
-                            Log.Error($"QuiverInsiderTradingDataDownloader.Run(): Invalid ticker {ticker}. Continuing...");
+                            Log.Trace($"QuiverInsiderTradingDataDownloader.Run(): Skipping invalid ticker '{rawTicker}' on {processDate:yyyyMMdd}");
                             continue;
                         }
-
-                        symbolsProcessed.Add(ticker);
-                        
-                        if (sid.Date == SecurityIdentifier.DefaultDate || sid.ToString().Contains(" 2T")) continue;
-
-                        if (!insiderTradingByTicker.TryGetValue(ticker, out var _))
+                        if (!_insiderTradingByTicker.TryGetValue(ticker, out var lines))
                         {
-                            insiderTradingByTicker.Add(ticker, new List<string>());
+                            _insiderTradingByTicker[ticker] = lines = [];
                         }
-
-                        var curRow = $"{insiderTrade.Name.Replace(",", string.Empty).Trim().ToLower()},{insiderTrade.Shares},{insiderTrade.PricePerShare},{insiderTrade.SharesOwnedFollowing}";
-                        insiderTradingByTicker[ticker].Add($"{processDate:yyyyMMdd},{curRow}");
-
-                        universeCsvContents.Add($"{sid},{ticker},{curRow}");
+                        lines.Add(line);
                     }
                 }
-
-                if (!_canCreateUniverseFiles)
-                {
-                    return false;
-                }
-                if (universeCsvContents.Any())
-                {
-                    SaveContentToFile(_universeFolder, $"{processDate:yyyyMMdd}", universeCsvContents);
-                }
-
-                insiderTradingByTicker.DoForEach(kvp => SaveContentToFile(_destinationFolder, kvp.Key, kvp.Value));
-                Log.Trace($"QuiverInsiderTradingDataDownloader.Run(): Processed tickers for {processDate:yyyyMMdd} - {String.Join(", ", symbolsProcessed)}");
             }
             catch (Exception e)
             {
@@ -185,42 +160,145 @@ namespace QuantConnect.DataProcessing
         }
 
         /// <summary>
-        /// Saves contents to disk, deleting existing zip files
+        /// Writes every accumulated per-ticker batch to disk, merging with any pre-existing file.
         /// </summary>
-        /// <param name="destinationFolder">Final destination of the data</param>
-        /// <param name="name">File name</param>
-        /// <param name="contents">Contents to write</param>
-        private void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
+        /// <returns>True on success</returns>
+        public bool Flush()
         {
-            var finalPath = Path.Combine(destinationFolder, $"{name.ToLowerInvariant()}.csv");
-            string filePath;
-
-            if (destinationFolder.Contains("universe"))
+            var failed = 0;
+            foreach (var kvp in _insiderTradingByTicker)
             {
-                filePath = Path.Combine(_processedDataDirectory, "universe", $"{name}.csv");
-            }
-            else
-            {
-                filePath = Path.Combine(_processedDataDirectory, $"{name.ToLowerInvariant()}.csv");
-            }
-
-            var finalFileExists = File.Exists(filePath);
-
-            var lines = new HashSet<string>(contents);
-            if (finalFileExists)
-            {
-                foreach (var line in File.ReadAllLines(filePath))
+                try
                 {
-                    lines.Add(line);
+                    SaveContentToFile(kvp.Key, kvp.Value);
+                }
+                catch (Exception e)
+                {
+                    failed++;
+                    Log.Error(e, $"QuiverInsiderTradingDataDownloader.Flush(): Failed to write data for ticker '{kvp.Key}'");
+                }
+            }
+            return failed == 0;
+        }
+
+        /// <summary>
+        /// Regenerates the universe files keyed by upload date by reading every per-ticker file.
+        /// </summary>
+        /// <returns>True if the universe files were regenerated successfully</returns>
+        public bool ProcessUniverse()
+        {
+            if (!_canCreateUniverseFiles)
+            {
+                Log.Trace("QuiverInsiderTradingDataDownloader.ProcessUniverse(): Map files not available, skipping universe generation");
+                return false;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            Log.Trace("QuiverInsiderTradingDataDownloader.ProcessUniverse(): Start regenerating universe files by upload date");
+
+            try
+            {
+                var mapFileProvider = new LocalZipMapFileProvider();
+                mapFileProvider.Initialize(new DefaultDataProvider());
+
+                Dictionary<DateTime, HashSet<string>> dataByUploadDate = [];
+
+                void processFile(string filePath)
+                {
+                    var ticker = Path.GetFileNameWithoutExtension(filePath).ToUpperInvariant();
+                    foreach (var line in File.ReadAllLines(filePath))
+                    {
+                        var firstComma = line.IndexOf(',');
+                        if (firstComma <= 0) continue;
+
+                        var uploadDateStr = line[..firstComma];
+                        if (!DateTime.TryParseExact(uploadDateStr, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal, out var uploadDate))
+                        {
+                            continue;
+                        }
+                        var rest = line[(firstComma + 1)..];
+
+                        if (!dataByUploadDate.TryGetValue(uploadDate, out var data))
+                        {
+                            dataByUploadDate[uploadDate] = data = [];
+                        }
+
+                        SecurityIdentifier sid;
+                        try
+                        {
+                            sid = SecurityIdentifier.GenerateEquity(ticker, Market.USA, true, mapFileProvider, uploadDate);
+                        }
+                        catch (Exception)
+                        {
+                            Log.Error($"QuiverInsiderTradingDataDownloader.ProcessUniverse(): Invalid ticker {ticker} on {uploadDate:yyyyMMdd}. Skipping line.");
+                            continue;
+                        }
+
+                        if (sid.Date == SecurityIdentifier.DefaultDate || sid.ToString().Contains(" 2T")) continue;
+
+                        data.Add($"{sid},{ticker},{rest}");
+                    }
+                }
+
+                if (Directory.Exists(_processedDataDirectory))
+                {
+                    Directory.EnumerateFiles(_processedDataDirectory, "*.csv").DoForEach(processFile);
+                }
+                Directory.EnumerateFiles(_destinationFolder, "*.csv").DoForEach(processFile);
+
+                dataByUploadDate.DoForEach(kvp =>
+                {
+                    var filePath = Path.Combine(_universeFolder, $"{kvp.Key:yyyyMMdd}.csv");
+                    File.WriteAllLines(filePath, kvp.Value.OrderBy(x => x));
+                });
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+                return false;
+            }
+
+            Log.Trace($"QuiverInsiderTradingDataDownloader.ProcessUniverse(): Finished in {stopwatch.Elapsed.ToStringInvariant(null)}");
+            return true;
+        }
+
+        /// <summary>
+        /// Saves per-ticker contents to disk, merging with any pre-existing file.
+        /// </summary>
+        /// <param name="name">File name (ticker)</param>
+        /// <param name="contents">Contents to write</param>
+        private void SaveContentToFile(string name, IEnumerable<string> contents)
+        {
+            name = name.ToLowerInvariant();
+            var finalPath = Path.Combine(_destinationFolder, $"{name}.csv");
+            var existingPath = Path.Combine(_processedDataDirectory, $"{name}.csv");
+
+            HashSet<string> lines = [.. contents];
+            foreach (var path in new[] { existingPath, finalPath })
+            {
+                if (File.Exists(path))
+                {
+                    foreach (var line in File.ReadAllLines(path))
+                    {
+                        lines.Add(line);
+                    }
                 }
             }
 
-            var finalLines = destinationFolder.Contains("universe")
-                ? lines.OrderBy(x => x)
-                : lines.OrderBy(x => DateTime.ParseExact(x.Split(',').First(), "yyyyMMdd",
-                    CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal));
+            var finalLines = lines
+                .OrderBy(x => DateTime.ParseExact(x.Split(',')[0], "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal))
+                .ToList();
 
             File.WriteAllLines(finalPath, finalLines);
+        }
+
+        private static string SanitizeCsv(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+            return value.Replace(",", string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty).Trim();
         }
 
         /// <summary>
@@ -245,25 +323,18 @@ namespace QuantConnect.DataProcessing
                 tickerList = ticker.Substring(0, length).Trim().Split(' ');
                 return true;
             }
-            
+
             tickerList = ticker.Split(' ');
             return true;
         }
 
         private class RawInsiderTrading : QuiverInsiderTrading
         {
-            /// <summary>
-            /// The time the data point ends at and becomes available to the algorithm
-            /// </summary>
-            [JsonProperty(PropertyName = "Date")]
-            [JsonConverter(typeof(DateTimeJsonConverter), "yyyy-MM-dd")]
-            public DateTime Date { get; set; }
-            
-            /// <summary>
-            /// The ticker/symbol for the company
-            /// </summary>
             [JsonProperty(PropertyName = "Ticker")]
             public string Ticker { get; set; } = null!;
+
+            [JsonProperty(PropertyName = "uploaded")]
+            public DateTime? Uploaded { get; set; }
         }
 
     }

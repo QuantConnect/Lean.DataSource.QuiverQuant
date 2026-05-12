@@ -32,34 +32,46 @@ namespace QuantConnect.DataProcessing
         /// <returns>Exit code. 0 equals successful, and any other value indicates the downloader/converter failed.</returns>
         public static void Main(string[] args)
         {
-            var dataset = args[0];
+            var dataset = args.Length > 0 ? args[0].ToLowerInvariant() : "cnbc";
             var destinationDirectory = Path.Combine(
                 Config.Get("temp-output-directory", "/temp-output-directory"),
                 "alternative");
             var processedDataDirectory = Path.Combine(
                 Config.Get("processed-data-directory", Globals.DataFolder),
                 "alternative");
-            var processingDateValue = Config.Get("processing-date", Environment.GetEnvironmentVariable("QC_DATAFLEET_DEPLOYMENT_DATE"));
+            var processingDateValue = Config.Get("processing-date", Environment.GetEnvironmentVariable("QC_DATAFLEET_DEPLOYMENT_DATE"))
+                ?? DateTime.UtcNow.AddDays(-1).ToString("yyyyMMdd");
+            var processingDate = Parse.DateTimeExact(processingDateValue, "yyyyMMdd");
+            var processingDateLookback = Config.GetInt("processing-date-lookback", 0);
+            var processingStartDate = processingDate.AddDays(-processingDateLookback);
 
             switch (dataset.ToLowerInvariant())
             {
                 case "cnbc":
                 {
-                    var processingDate = Parse.DateTimeExact(processingDateValue, "yyyyMMdd");
                     RunDownloader(
-                        QuiverCNBCDataDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverCNBCDataDownloader.VendorDataName,
                         () => new QuiverCNBCDataDownloader(destinationDirectory, processedDataDirectory),
-                        instance => instance.Run(processingDate));
+                        instance =>
+                        {
+                            for (var date = processingStartDate; date <= processingDate; date = date.AddDays(1))
+                            {
+                                if (!instance.Run(date))
+                                {
+                                    Log.Error($"QuantConnect.DataProcessing.Program.Main(): Failed to download/process " +
+                                        $"{QuiverDataDownloader.VendorName} {QuiverCNBCDataDownloader.VendorDataName} data for date: {date:yyyy-MM-dd}");
+                                }
+                            }
+                            instance.Flush();
+                            instance.ProcessUniverse();
+                            return true;
+                        });
                     break;
                 }
 
                 case "governmentcontract":
                 {
-                    var processingDate = string.IsNullOrWhiteSpace(processingDateValue)
-                        ? DateTime.UtcNow.AddDays(-1)
-                        : Parse.DateTimeExact(processingDateValue, "yyyyMMdd");
-
                     var datasetStartDate = new DateTime(2022, 4, 21);
                     if (processingDate < datasetStartDate)
                     {
@@ -68,7 +80,7 @@ namespace QuantConnect.DataProcessing
                     }
 
                     RunDownloader(
-                        QuiverGovernmentContractDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverGovernmentContractDownloader.VendorDataName,
                         () => new QuiverGovernmentContractDownloader(),
                         instance =>
@@ -77,7 +89,7 @@ namespace QuantConnect.DataProcessing
                             if (!success)
                             {
                                 Log.Error($"QuantConnect.DataProcessing.Program.Main(): Failed to download/process " +
-                                    $"{QuiverGovernmentContractDownloader.VendorName} {QuiverGovernmentContractDownloader.VendorDataName} data for date: {processingDate:yyyy-MM-dd}");
+                                    $"{QuiverDataDownloader.VendorName} {QuiverGovernmentContractDownloader.VendorDataName} data for date: {processingDate:yyyy-MM-dd}");
                             }
                             instance.ProcessUniverse();
                             return true;
@@ -87,9 +99,8 @@ namespace QuantConnect.DataProcessing
 
                 case "lobbying":
                 {
-                    var processingDate = Parse.DateTimeExact(processingDateValue, "yyyyMMdd");
                     RunDownloader(
-                        QuiverLobbyingDataDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverLobbyingDataDownloader.VendorDataName,
                         () => new QuiverLobbyingDataDownloader(destinationDirectory, processedDataDirectory),
                         instance => instance.Run(processingDate));
@@ -100,7 +111,7 @@ namespace QuantConnect.DataProcessing
                 {
                     var congressDestination = Path.Combine(destinationDirectory, "quiver");
                     RunDownloader(
-                        QuiverCongressDataDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverCongressDataDownloader.VendorDataName,
                         () => new QuiverCongressDataDownloader(congressDestination),
                         instance => instance.Run());
@@ -111,7 +122,7 @@ namespace QuantConnect.DataProcessing
                 {
                     var tempOutput = Config.Get("temp-output-directory", "/temp-output-directory");
                     RunDownloader(
-                        QuiverWallStreetBetsDataDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverWallStreetBetsDataDownloader.VendorDataName,
                         () => new QuiverWallStreetBetsDataDownloader(tempOutput),
                         instance => instance.Run());
@@ -120,13 +131,24 @@ namespace QuantConnect.DataProcessing
 
                 case "insidertrading":
                 {
-                    var processingStartDate = GetDateConfig("processing-start-date");
-                    var processingEndDate = GetDateConfig("processing-end-date");
                     RunDownloader(
-                        QuiverInsiderTradingDataDownloader.VendorName,
+                        QuiverDataDownloader.VendorName,
                         QuiverInsiderTradingDataDownloader.VendorDataName,
                         () => new QuiverInsiderTradingDataDownloader(destinationDirectory, processedDataDirectory),
-                        instance => instance.Run(processingStartDate, processingEndDate));
+                        instance =>
+                        {
+                            for (var date = processingStartDate; date <= processingDate; date = date.AddDays(1))
+                            {
+                                if (!instance.Run(date))
+                                {
+                                    Log.Error($"QuantConnect.DataProcessing.Program.Main(): Failed to download/process " +
+                                        $"{QuiverDataDownloader.VendorName} {QuiverInsiderTradingDataDownloader.VendorDataName} data for date: {date:yyyy-MM-dd}");
+                                }
+                            }
+                            instance.Flush();
+                            instance.ProcessUniverse();
+                            return true;
+                        });
                     break;
                 }
 
@@ -168,13 +190,6 @@ namespace QuantConnect.DataProcessing
             {
                 instance.DisposeSafely();
             }
-        }
-
-        private static DateTime GetDateConfig(string configKey)
-        {
-            var value = Config.Get(configKey, Environment.GetEnvironmentVariable("QC_DATAFLEET_DEPLOYMENT_DATE"))
-                ?? DateTime.Today.ToString("yyyyMMdd");
-            return Parse.DateTimeExact(value, "yyyyMMdd");
         }
     }
 }
