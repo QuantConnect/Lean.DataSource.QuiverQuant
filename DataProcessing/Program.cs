@@ -63,7 +63,10 @@ namespace QuantConnect.DataProcessing
                                         $"{VendorName} {QuiverCNBCDataDownloader.VendorDataName} data for date: {date:yyyy-MM-dd}");
                                 }
                             }
-                            instance.Flush();
+                            if (!instance.Flush())
+                            {
+                                return false;
+                            }
                             instance.ProcessUniverse();
                             return true;
                         });
@@ -138,7 +141,10 @@ namespace QuantConnect.DataProcessing
                                         $"{VendorName} {QuiverInsiderTradingDataDownloader.VendorDataName} data for date: {date:yyyy-MM-dd}");
                                 }
                             }
-                            instance.Flush();
+                            if (!instance.Flush())
+                            {
+                                return false;
+                            }
                             instance.ProcessUniverse();
                             return true;
                         });

@@ -141,6 +141,12 @@ namespace QuantConnect.DataProcessing
         /// <returns>True on success</returns>
         public bool Flush()
         {
+            if (_cnbcByTicker.Count == 0)
+            {
+                Log.Error($"QuiverCNBCDataDownloader.Flush(): No data accumulated; treating run as a failure (likely unable to reach QuiverQuant).");
+                return false;
+            }
+
             try
             {
                 foreach (var kvp in _cnbcByTicker)
