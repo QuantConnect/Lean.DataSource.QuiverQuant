@@ -165,6 +165,12 @@ namespace QuantConnect.DataProcessing
         /// <returns>True on success</returns>
         public bool Flush()
         {
+            if (_insiderTradingByTicker.Count == 0)
+            {
+                Log.Error($"QuiverInsiderTradingDataDownloader.Flush(): No data accumulated; treating run as a failure (likely unable to reach QuiverQuant).");
+                return false;
+            }
+
             var failed = 0;
             foreach (var kvp in _insiderTradingByTicker)
             {
