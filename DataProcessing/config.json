@@ -1,4 +1,6 @@
 {
   "data-folder": "../../Lean/Data/",
-  "quiver-auth-token": ""
+  "quiver-auth-token": "",
+  "processing-date-lookback": 0,
+  "vendor-data-name": "cnbc"
 }
