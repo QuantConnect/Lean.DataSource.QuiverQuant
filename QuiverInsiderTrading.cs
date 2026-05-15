@@ -38,13 +38,13 @@ namespace QuantConnect.DataSource
         /// </summary>
         [JsonProperty(PropertyName = "Date")]
         [JsonConverter(typeof(DateTimeJsonConverter), "yyyy-MM-dd")]
-        public DateTime? Date { get; set; }
+        public DateTime Date { get; set; }
 
         /// <summary>
         /// Time the transaction was filed and became publicly available
         /// </summary>
         [JsonProperty(PropertyName = "fileDate")]
-        public DateTime? FileDate { get; set; }
+        public DateTime FileDate { get; set; }
 
         /// <summary>
         /// Type of transaction (see SEC Form 4 codes:
@@ -82,6 +82,12 @@ namespace QuantConnect.DataSource
         /// </summary>
         [JsonProperty(PropertyName = "directOrIndirectOwnership")]
         public OwnershipType DirectOrIndirectOwnership { get; set; }
+
+        /// <summary>
+        /// Name of the transactor
+        /// </summary>
+        [JsonProperty(PropertyName = "Name")]
+        public string Name { get; set; }
 
         /// <summary>
         /// Corporate title of the transactor
@@ -159,18 +165,19 @@ namespace QuantConnect.DataSource
                 Time = uploadedDate.AddDays(-1),
                 Symbol = config.Symbol,
                 FileDate = (csv[1].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMddHHmmss")) ?? uploadedDate).AddDays(-1),
-                Date = csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")),
+                Date = csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? uploadedDate.AddDays(-1),
                 TransactionCode = QuiverQuantCsvExtensions.ToTransactionCode(csv[3]),
                 PricePerShare = csv[4].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 Shares = csv[5].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 SharesOwnedFollowing = csv[6].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 AcquiredDisposedCode = QuiverQuantCsvExtensions.ToAcquiredDisposedCode(csv[7]),
                 DirectOrIndirectOwnership = QuiverQuantCsvExtensions.ToOwnershipType(csv[8]),
-                OfficerTitle = csv[9],
-                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[10]),
-                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[11]),
-                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
-                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
+                Name = csv[9],
+                OfficerTitle = csv[10],
+                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[11]),
+                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
+                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
+                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
             };
         }
 
@@ -184,7 +191,7 @@ namespace QuantConnect.DataSource
                 // we are the wrapper instance
                 return $"{Symbol} - Data Points {Data.Count}";
             }
-            return $"{Symbol} ({OfficerTitle}) - {TransactionCode}/{AcquiredDisposedCode} - " +
+            return $"{Symbol} ({Name}, {OfficerTitle}) - {TransactionCode}/{AcquiredDisposedCode} - " +
                    $"{Shares} @ {PricePerShare} - SharesOwnedFollowing: {SharesOwnedFollowing} - " +
                    $"Ownership: {DirectOrIndirectOwnership} - Date: {Date} - Filed: {FileDate}";
         }
@@ -213,6 +220,7 @@ namespace QuantConnect.DataSource
                 SharesOwnedFollowing = SharesOwnedFollowing,
                 AcquiredDisposedCode = AcquiredDisposedCode,
                 DirectOrIndirectOwnership = DirectOrIndirectOwnership,
+                Name = Name,
                 OfficerTitle = OfficerTitle,
                 IsDirector = IsDirector,
                 IsOfficer = IsOfficer,

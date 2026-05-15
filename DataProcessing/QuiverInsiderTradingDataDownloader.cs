@@ -119,10 +119,13 @@ namespace QuantConnect.DataProcessing
                     var uploadedDate = insiderTrade.Uploaded.Value.Date;
                     // Omit fileDate when its calendar day matches uploaded. Reader falls back to uploadedDate,
                     // preserving the day but dropping intraday precision (acceptable trade-off for storage).
-                    var fileDate = insiderTrade.FileDate?.Date == uploadedDate
+                    var fileDate = insiderTrade.FileDate == default || insiderTrade.FileDate.Date == uploadedDate
                         ? string.Empty
-                        : insiderTrade.FileDate?.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) ?? string.Empty;
-                    var transactionDate = insiderTrade.Date?.ToString("yyyyMMdd", CultureInfo.InvariantCulture) ?? string.Empty;
+                        : insiderTrade.FileDate.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+                    var transactionDate = insiderTrade.Date == default
+                        ? string.Empty
+                        : insiderTrade.Date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+                    var name = SanitizeCsv(insiderTrade.Name);
                     var officerTitle = SanitizeCsv(insiderTrade.OfficerTitle);
                     var transactionCode = insiderTrade.TransactionCode.ToCsv();
                     var ownership = insiderTrade.DirectOrIndirectOwnership.ToCsv();
@@ -130,7 +133,7 @@ namespace QuantConnect.DataProcessing
 
                     var line = $"{uploadedDate:yyyyMMdd},{fileDate},{transactionDate}," +
                                $"{transactionCode},{insiderTrade.PricePerShare},{insiderTrade.Shares},{insiderTrade.SharesOwnedFollowing}," +
-                               $"{acquiredDisposed},{ownership},{officerTitle}," +
+                               $"{acquiredDisposed},{ownership},{name},{officerTitle}," +
                                $"{insiderTrade.IsDirector.ToCsv()},{insiderTrade.IsOfficer.ToCsv()},{insiderTrade.IsTenPercentOwner.ToCsv()},{insiderTrade.IsOther.ToCsv()}";
 
                     foreach (var rawTicker in tickerList)
