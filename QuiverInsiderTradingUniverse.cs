@@ -34,12 +34,12 @@ namespace QuantConnect.DataSource
         /// <summary>
         /// Transaction date as reported on SEC Form 4
         /// </summary>
-        public DateTime? Date { get; set; }
+        public DateTime Date { get; set; }
 
         /// <summary>
         /// Time the transaction was filed and became publicly available
         /// </summary>
-        public DateTime? FileDate { get; set; }
+        public DateTime FileDate { get; set; }
 
         /// <summary>
         /// Type of transaction (SEC Form 4 code)
@@ -70,6 +70,11 @@ namespace QuantConnect.DataSource
         /// Whether the security is held directly or indirectly
         /// </summary>
         public OwnershipType DirectOrIndirectOwnership { get; set; }
+
+        /// <summary>
+        /// Name of the transactor
+        /// </summary>
+        public string Name { get; set; }
 
         /// <summary>
         /// Corporate title of the transactor
@@ -143,18 +148,19 @@ namespace QuantConnect.DataSource
                 Time = date.AddDays(-1),
                 Symbol = new Symbol(SecurityIdentifier.Parse(csv[0]), csv[1]),
                 FileDate = (csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMddHHmmss")) ?? date).AddDays(-1),
-                Date = csv[3].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")),
+                Date = csv[3].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? date.AddDays(-1),
                 TransactionCode = QuiverQuantCsvExtensions.ToTransactionCode(csv[4]),
                 PricePerShare = price,
                 Shares = csv[6].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 SharesOwnedFollowing = csv[7].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 AcquiredDisposedCode = QuiverQuantCsvExtensions.ToAcquiredDisposedCode(csv[8]),
                 DirectOrIndirectOwnership = QuiverQuantCsvExtensions.ToOwnershipType(csv[9]),
-                OfficerTitle = csv[10],
-                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[11]),
-                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
-                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
-                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
+                Name = csv[10],
+                OfficerTitle = csv[11],
+                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
+                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
+                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
+                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[15]),
                 Value = price ?? 0
             };
         }
@@ -173,6 +179,7 @@ namespace QuantConnect.DataSource
                    Invariant($"SharesOwnedFollowing: {SharesOwnedFollowing} ") +
                    Invariant($"AcquiredDisposedCode: {AcquiredDisposedCode} ") +
                    Invariant($"DirectOrIndirectOwnership: {DirectOrIndirectOwnership} ") +
+                   Invariant($"Name: {Name} ") +
                    Invariant($"OfficerTitle: {OfficerTitle} ") +
                    Invariant($"IsDirector: {IsDirector} ") +
                    Invariant($"IsOfficer: {IsOfficer} ") +
@@ -195,6 +202,7 @@ namespace QuantConnect.DataSource
                 SharesOwnedFollowing = SharesOwnedFollowing,
                 AcquiredDisposedCode = AcquiredDisposedCode,
                 DirectOrIndirectOwnership = DirectOrIndirectOwnership,
+                Name = Name,
                 OfficerTitle = OfficerTitle,
                 IsDirector = IsDirector,
                 IsOfficer = IsOfficer,

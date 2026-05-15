@@ -55,7 +55,7 @@ namespace QuantConnect.DataLibrary.Tests
             var symbol = new Symbol(SecurityIdentifier.Parse("AAPL R735QTJ8XC9X"), "AAPL");
             var config = CreateConfig(symbol);
             var factory = new QuiverInsiderTrading();
-            var line = "20260508,20260507093000,20260507,P,150.25,100,500,A,D,CEO,T,T,F,";
+            var line = "20260508,20260507093000,20260507,P,150.25,100,500,A,D,John Smith,CEO,T,T,F,";
 
             var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
 
@@ -70,6 +70,7 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual(500m, result.SharesOwnedFollowing);
             Assert.AreEqual(AcquiredDisposedCode.Acquired, result.AcquiredDisposedCode);
             Assert.AreEqual(OwnershipType.Direct, result.DirectOrIndirectOwnership);
+            Assert.AreEqual("John Smith", result.Name);
             Assert.AreEqual("CEO", result.OfficerTitle);
             Assert.AreEqual(true, result.IsDirector);
             Assert.AreEqual(true, result.IsOfficer);
@@ -84,12 +85,27 @@ namespace QuantConnect.DataLibrary.Tests
             var config = CreateConfig(symbol);
             var factory = new QuiverInsiderTrading();
             // csv[1] (fileDate) is empty — Reader uses uploadedDate.AddDays(-1)
-            var line = "20260508,,20260507,S,275,1534,13366,D,D,CFO,,T,,";
+            var line = "20260508,,20260507,S,275,1534,13366,D,D,Jane Doe,CFO,,T,,";
 
             var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
 
             Assert.AreEqual(new DateTime(2026, 5, 7), result.FileDate);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
+        }
+
+        [Test]
+        public void Reader_EmptyDateFallsBackToUploadedMinusOne()
+        {
+            var symbol = new Symbol(SecurityIdentifier.Parse("AAPL R735QTJ8XC9X"), "AAPL");
+            var config = CreateConfig(symbol);
+            var factory = new QuiverInsiderTrading();
+            // csv[2] (Date) is empty — Reader falls back to uploadedDate.AddDays(-1)
+            var line = "20260508,,,,,1717,40879,,,Jane Doe,,,,,";
+
+            var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
+
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.Date);
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.FileDate);
         }
 
         [Test]
@@ -99,7 +115,7 @@ namespace QuantConnect.DataLibrary.Tests
             var config = CreateConfig(symbol);
             var factory = new QuiverInsiderTrading();
             // All optional numerics/booleans empty
-            var line = "20260508,,20260507,M,,1717,40879,A,D,,,,,";
+            var line = "20260508,,20260507,M,,1717,40879,A,D,,,,,,";
 
             var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
 
@@ -107,6 +123,7 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.IsNull(result.PricePerShare);
             Assert.AreEqual(1717m, result.Shares);
             Assert.AreEqual(40879m, result.SharesOwnedFollowing);
+            Assert.AreEqual(string.Empty, result.Name);
             Assert.AreEqual(string.Empty, result.OfficerTitle);
             Assert.IsNull(result.IsDirector);
             Assert.IsNull(result.IsOfficer);
@@ -119,7 +136,7 @@ namespace QuantConnect.DataLibrary.Tests
         {
             var factory = new QuiverInsiderTradingUniverse();
             // csv[0]=sid, csv[1]=ticker, csv[2]=fileDate(empty -> fallback), csv[3]=Date, csv[4]=TransactionCode, ...
-            var line = "AAPL R735QTJ8XC9X,AAPL,,20260507,P,150.25,100,500,A,D,CEO,T,T,F,";
+            var line = "AAPL R735QTJ8XC9X,AAPL,,20260507,P,150.25,100,500,A,D,John Smith,CEO,T,T,F,";
 
             var result = (QuiverInsiderTradingUniverse)factory.Reader(null, line, new DateTime(2026, 5, 8), false);
 
@@ -131,6 +148,8 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual(150.25m, result.PricePerShare);
             Assert.AreEqual(AcquiredDisposedCode.Acquired, result.AcquiredDisposedCode);
             Assert.AreEqual(OwnershipType.Direct, result.DirectOrIndirectOwnership);
+            Assert.AreEqual("John Smith", result.Name);
+            Assert.AreEqual("CEO", result.OfficerTitle);
             Assert.AreEqual(150.25m, result.Value);
         }
 
@@ -186,6 +205,7 @@ namespace QuantConnect.DataLibrary.Tests
                 SharesOwnedFollowing = 0.0m,
                 AcquiredDisposedCode = AcquiredDisposedCode.Acquired,
                 DirectOrIndirectOwnership = OwnershipType.Direct,
+                Name = "John Smith",
                 OfficerTitle = "CEO",
                 IsDirector = false,
                 IsOfficer = true,
