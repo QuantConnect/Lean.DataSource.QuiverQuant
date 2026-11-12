@@ -158,6 +158,8 @@ namespace QuantConnect.DataSource
         {
             var csv = line.Split(',');
 
+            // Rows written before the Name column was added have 14 columns and no Name
+            var nameOffset = csv.Length > 14 ? 1 : 0;
             var uploadedDate = Parse.DateTimeExact(csv[0], "yyyyMMdd");
 
             return new QuiverInsiderTrading
@@ -172,12 +174,12 @@ namespace QuantConnect.DataSource
                 SharesOwnedFollowing = csv[6].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 AcquiredDisposedCode = QuiverQuantCsvExtensions.ToAcquiredDisposedCode(csv[7]),
                 DirectOrIndirectOwnership = QuiverQuantCsvExtensions.ToOwnershipType(csv[8]),
-                Name = csv[9],
-                OfficerTitle = csv[10],
-                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[11]),
-                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
-                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
-                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
+                Name = nameOffset == 1 ? csv[9] : null,
+                OfficerTitle = csv[9 + nameOffset],
+                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[10 + nameOffset]),
+                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[11 + nameOffset]),
+                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[12 + nameOffset]),
+                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[13 + nameOffset]),
             };
         }
 

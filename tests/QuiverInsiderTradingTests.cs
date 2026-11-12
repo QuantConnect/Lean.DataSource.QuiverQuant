@@ -153,6 +153,52 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual(150.25m, result.Value);
         }
 
+        [Test]
+        public void Reader_ParsesLegacyRowWithoutName()
+        {
+            var symbol = new Symbol(SecurityIdentifier.Parse("AAPL R735QTJ8XC9X"), "AAPL");
+            var config = CreateConfig(symbol);
+            var factory = new QuiverInsiderTrading();
+            var line = "20210804,,20210514,G,0,4010.0,324164.0,D,D,SVP GC and Secretary,F,T,F,F";
+
+            var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2021, 8, 4), false);
+
+            Assert.AreEqual(new DateTime(2021, 8, 3), result.Time);
+            Assert.AreEqual(new DateTime(2021, 5, 14), result.Date);
+            Assert.AreEqual(TransactionCode.Gift, result.TransactionCode);
+            Assert.AreEqual(4010m, result.Shares);
+            Assert.AreEqual(324164m, result.SharesOwnedFollowing);
+            Assert.AreEqual(AcquiredDisposedCode.Disposed, result.AcquiredDisposedCode);
+            Assert.AreEqual(OwnershipType.Direct, result.DirectOrIndirectOwnership);
+            Assert.IsNull(result.Name);
+            Assert.AreEqual("SVP GC and Secretary", result.OfficerTitle);
+            Assert.AreEqual(false, result.IsDirector);
+            Assert.AreEqual(true, result.IsOfficer);
+            Assert.AreEqual(false, result.IsTenPercentOwner);
+            Assert.AreEqual(false, result.IsOther);
+        }
+
+        [Test]
+        public void UniverseReader_ParsesLegacyRowWithoutName()
+        {
+            var factory = new QuiverInsiderTradingUniverse();
+            var line = "ADI R735QTJ8XC9X,ADI,,20210601,M,57.29,1830.0,29428.0,A,D,President & CEO,T,T,F,F";
+
+            var result = (QuiverInsiderTradingUniverse)factory.Reader(null, line, new DateTime(2021, 6, 2), false);
+
+            Assert.AreEqual("ADI", result.Symbol.Value);
+            Assert.AreEqual(new DateTime(2021, 6, 1), result.Date);
+            Assert.AreEqual(TransactionCode.ExerciseOrConversionExempt, result.TransactionCode);
+            Assert.AreEqual(57.29m, result.PricePerShare);
+            Assert.AreEqual(AcquiredDisposedCode.Acquired, result.AcquiredDisposedCode);
+            Assert.IsNull(result.Name);
+            Assert.AreEqual("President & CEO", result.OfficerTitle);
+            Assert.AreEqual(true, result.IsDirector);
+            Assert.AreEqual(true, result.IsOfficer);
+            Assert.AreEqual(false, result.IsTenPercentOwner);
+            Assert.AreEqual(false, result.IsOther);
+        }
+
         private static SubscriptionDataConfig CreateConfig(Symbol symbol)
         {
             return new SubscriptionDataConfig(

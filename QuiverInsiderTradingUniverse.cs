@@ -140,6 +140,8 @@ namespace QuantConnect.DataSource
         public override BaseData Reader(SubscriptionDataConfig config, string line, DateTime date, bool isLiveMode)
         {
             var csv = line.Split(',');
+            // Rows written before the Name column was added have 15 columns and no Name
+            var nameOffset = csv.Length > 15 ? 1 : 0;
 
             var price = csv[5].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture));
 
@@ -155,12 +157,12 @@ namespace QuantConnect.DataSource
                 SharesOwnedFollowing = csv[7].IfNotNullOrEmpty<decimal?>(s => decimal.Parse(s, NumberStyles.Any, CultureInfo.InvariantCulture)),
                 AcquiredDisposedCode = QuiverQuantCsvExtensions.ToAcquiredDisposedCode(csv[8]),
                 DirectOrIndirectOwnership = QuiverQuantCsvExtensions.ToOwnershipType(csv[9]),
-                Name = csv[10],
-                OfficerTitle = csv[11],
-                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[12]),
-                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[13]),
-                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[14]),
-                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[15]),
+                Name = nameOffset == 1 ? csv[10] : null,
+                OfficerTitle = csv[10 + nameOffset],
+                IsDirector = QuiverQuantCsvExtensions.ToNullableBool(csv[11 + nameOffset]),
+                IsOfficer = QuiverQuantCsvExtensions.ToNullableBool(csv[12 + nameOffset]),
+                IsTenPercentOwner = QuiverQuantCsvExtensions.ToNullableBool(csv[13 + nameOffset]),
+                IsOther = QuiverQuantCsvExtensions.ToNullableBool(csv[14 + nameOffset]),
                 Value = price ?? 0
             };
         }
