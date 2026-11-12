@@ -86,6 +86,28 @@ namespace QuantConnect.DataLibrary.Tests
             }, File.ReadAllLines(Path.Combine(_universe, "20260808.csv")));
         }
 
+        [Test]
+        public void TickersSharingASecurityKeepTheirOwnUniverseRows()
+        {
+            File.WriteAllLines(Path.Combine(_universe, "20250210.csv"), new[]
+            {
+                "ABX R735QTJ8XC9X,B,9,50,0.1",
+                "ABX R735QTJ8XC9X,GOLD,4,108,0.64043"
+            });
+
+            QuiverWallStreetBetsDataDownloader.SaveContentToFile(_universe, "20250210", new[]
+            {
+                "ABX R735QTJ8XC9X,B,10,49,0.11145",
+                "ABX R735QTJ8XC9X,GOLD,4,108,0.64043"
+            });
+
+            CollectionAssert.AreEqual(new[]
+            {
+                "ABX R735QTJ8XC9X,B,10,49,0.11145",
+                "ABX R735QTJ8XC9X,GOLD,4,108,0.64043"
+            }, File.ReadAllLines(Path.Combine(_universe, "20250210.csv")));
+        }
+
         // The previous merge put the fetched rows before the stored ones and sorted by date with a stable sort,
         // so a stored duplicate pair has the newest value first
         [Test]
