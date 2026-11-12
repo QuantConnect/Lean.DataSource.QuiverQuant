@@ -123,25 +123,33 @@ namespace QuantConnect.DataProcessing
         }
 
         /// <summary>
-        /// Saves contents to disk
+        /// Merges contents with the stored file and saves them to disk, keeping one row per date or security and ticker
         /// </summary>
         /// <param name="destinationFolder">Final destination of the data</param>
         /// <param name="name">File name</param>
         /// <param name="contents">Contents to write</param>
-        private void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
+        public static void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
         {
             var finalPath = Path.Combine(destinationFolder, $"{name.ToLowerInvariant()}.csv");
-            
-            var lines = new HashSet<string>(contents);
-            if (File.Exists(finalPath))
-            {
-                foreach (var line in File.ReadAllLines(finalPath))
-                {
-                    lines.Add(line);
-                }
-            }
 
-            var finalLines = destinationFolder.Contains("universe") ?
+            // One row per date (ticker file) or per security and ticker (universe file): a fetched value replaces the stored one.
+            // Two tickers can map to the same security on a date, so the ticker is part of the universe key.
+            // Older files can hold duplicate keys, written newest first in ticker files, so the first stored row wins
+            var isUniverse = destinationFolder.Contains("universe");
+            var keyColumns = isUniverse ? 2 : 1;
+            var linesByKey = new Dictionary<string, string>();
+            var storedLines = File.Exists(finalPath) ? File.ReadAllLines(finalPath) : Array.Empty<string>();
+            foreach (var line in storedLines.Where(x => !string.IsNullOrWhiteSpace(x)))
+            {
+                linesByKey.TryAdd(string.Join(',', line.Split(',').Take(keyColumns)), line);
+            }
+            foreach (var line in contents)
+            {
+                linesByKey[string.Join(',', line.Split(',').Take(keyColumns))] = line;
+            }
+            var lines = linesByKey.Values;
+
+            var finalLines = isUniverse ?
                 lines.OrderBy(x => x) :
                 lines.OrderBy(x => DateTime.ParseExact(x.Split(',').First(), "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal));
 
