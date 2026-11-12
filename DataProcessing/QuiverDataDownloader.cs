@@ -95,6 +95,13 @@ namespace QuantConnect.DataProcessing
                     {
                         var finalRequestUri = response.RequestMessage.RequestUri;
                         response = client.GetAsync(finalRequestUri).Result;
+
+                        // A bad token won't fix itself on retry; the job must fail loudly
+                        if (response.StatusCode == HttpStatusCode.Unauthorized)
+                        {
+                            response.DisposeSafely();
+                            throw new UnauthorizedAccessException($"{GetType().Name}.HttpRequester(): Quiver API rejected the auth token (401) for url: {finalRequestUri}");
+                        }
                     }
 
                     response.EnsureSuccessStatusCode();
@@ -104,7 +111,7 @@ namespace QuantConnect.DataProcessing
 
                     return result;
                 }
-                catch (Exception e)
+                catch (Exception e) when (e is not UnauthorizedAccessException)
                 {
                     Log.Error(e, $"{GetType().Name}.HttpRequester(): Error at HttpRequester. (retry {retries}/{_maxRetries})");
                     Thread.Sleep(1000);
