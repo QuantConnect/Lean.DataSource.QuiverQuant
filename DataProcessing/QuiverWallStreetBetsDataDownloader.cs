@@ -123,23 +123,28 @@ namespace QuantConnect.DataProcessing
         }
 
         /// <summary>
-        /// Saves contents to disk
+        /// Merges contents with the stored file and saves them to disk, keeping one row per date or security
         /// </summary>
         /// <param name="destinationFolder">Final destination of the data</param>
         /// <param name="name">File name</param>
         /// <param name="contents">Contents to write</param>
-        private void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
+        public static void SaveContentToFile(string destinationFolder, string name, IEnumerable<string> contents)
         {
             var finalPath = Path.Combine(destinationFolder, $"{name.ToLowerInvariant()}.csv");
-            
-            var lines = new HashSet<string>(contents);
-            if (File.Exists(finalPath))
+
+            // One row per date (ticker file) or per security (universe file): a fetched value replaces the stored one.
+            // Older files can hold duplicate keys, written newest first in ticker files, so the first stored row wins
+            var linesByKey = new Dictionary<string, string>();
+            var storedLines = File.Exists(finalPath) ? File.ReadAllLines(finalPath) : Array.Empty<string>();
+            foreach (var line in storedLines.Where(x => !string.IsNullOrWhiteSpace(x)))
             {
-                foreach (var line in File.ReadAllLines(finalPath))
-                {
-                    lines.Add(line);
-                }
+                linesByKey.TryAdd(line.Split(',')[0], line);
             }
+            foreach (var line in contents)
+            {
+                linesByKey[line.Split(',')[0]] = line;
+            }
+            var lines = linesByKey.Values;
 
             var finalLines = destinationFolder.Contains("universe") ?
                 lines.OrderBy(x => x) :
