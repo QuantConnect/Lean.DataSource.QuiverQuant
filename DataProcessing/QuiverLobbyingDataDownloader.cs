@@ -124,7 +124,7 @@ namespace QuantConnect.DataProcessing
 
                 lobbyingByTicker.DoForEach(kvp => SaveContentToFile(_destinationFolder, kvp.Key, kvp.Value));
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not UnauthorizedAccessException)
             {
                 Log.Error(e);
                 return false;

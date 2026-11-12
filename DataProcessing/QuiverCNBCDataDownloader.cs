@@ -125,7 +125,7 @@ namespace QuantConnect.DataProcessing
                     lines.Add(line);
                 }
             }
-            catch (Exception e)
+            catch (Exception e) when (e is not UnauthorizedAccessException)
             {
                 Log.Error(e);
                 return false;

@@ -123,7 +123,7 @@ public class QuiverGovernmentContractDownloader : QuiverDataDownloader
                 return false;
             }
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not UnauthorizedAccessException)
         {
             Log.Error(e);
             return false;
