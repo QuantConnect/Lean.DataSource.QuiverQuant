@@ -17,6 +17,7 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using QuantConnect.Configuration;
 using QuantConnect.DataProcessing;
 
 namespace QuantConnect.DataLibrary.Tests
@@ -38,6 +39,33 @@ namespace QuantConnect.DataLibrary.Tests
         {
             using var downloader = new QuiverCongressDataDownloader(Directory, "invalid-token");
             Assert.Throws<UnauthorizedAccessException>(() => downloader.Run());
+        }
+
+        [TestCase("quiver-key", "vendor-key", "quiver-key")]
+        [TestCase("", "vendor-key", "vendor-key")]
+        [TestCase("quiver-key", "", "quiver-key")]
+        public void ReadsTokenFromQuiverKeyThenLegacyVendorKey(string quiverToken, string vendorToken, string expected)
+        {
+            Config.Set("quiver-auth-token", quiverToken);
+            Config.Set("vendor-auth-token", vendorToken);
+            try
+            {
+                using var downloader = new TokenDownloader();
+                Assert.AreEqual(expected, downloader.Token);
+            }
+            finally
+            {
+                Config.Reset();
+            }
+        }
+
+        private class TokenDownloader : QuiverDataDownloader
+        {
+            public string Token => _clientKey;
+
+            public TokenDownloader() : base(1, TimeSpan.FromSeconds(1))
+            {
+            }
         }
     }
 }

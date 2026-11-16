@@ -52,7 +52,9 @@ namespace QuantConnect.DataProcessing
         /// <param name="apiKey">Optional API key override; defaults to config value</param>
         protected QuiverDataDownloader(int rateLimit, TimeSpan ratePeriod, string apiKey = null)
         {
-            _clientKey = apiKey ?? Config.Get("quiver-auth-token");
+            var configuredKey = Config.Get("quiver-auth-token");
+            // Configurations written for the standalone Quiver processors (CNBC, GovernmentContracts, InsiderTrading) name the token vendor-auth-token
+            _clientKey = apiKey ?? (string.IsNullOrEmpty(configuredKey) ? Config.Get("vendor-auth-token") : configuredKey);
             _indexGate = new RateGate(rateLimit, ratePeriod);
             _canCreateUniverseFiles = Directory.Exists(Path.Combine(Globals.DataFolder, "equity", "usa", "map_files"));
         }
