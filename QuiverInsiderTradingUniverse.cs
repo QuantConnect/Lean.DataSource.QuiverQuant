@@ -149,7 +149,7 @@ namespace QuantConnect.DataSource
             {
                 Time = date.AddDays(-1),
                 Symbol = new Symbol(SecurityIdentifier.Parse(csv[0]), csv[1]),
-                FileDate = (csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMddHHmmss")) ?? date).AddDays(-1),
+                FileDate = csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMddHHmmss")) ?? date.AddDays(-1),
                 Date = csv[3].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? date.AddDays(-1),
                 TransactionCode = QuiverQuantCsvExtensions.ToTransactionCode(csv[4]),
                 PricePerShare = price,
