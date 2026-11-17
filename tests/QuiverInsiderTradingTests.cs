@@ -63,7 +63,7 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
             Assert.AreEqual(new DateTime(2026, 5, 8), result.EndTime);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Date);
-            Assert.AreEqual(new DateTime(2026, 5, 6, 9, 30, 0), result.FileDate);
+            Assert.AreEqual(new DateTime(2026, 5, 7, 9, 30, 0), result.FileDate);
             Assert.AreEqual(TransactionCode.Purchase, result.TransactionCode);
             Assert.AreEqual(150.25m, result.PricePerShare);
             Assert.AreEqual(100m, result.Shares);
@@ -151,6 +151,18 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual("John Smith", result.Name);
             Assert.AreEqual("CEO", result.OfficerTitle);
             Assert.AreEqual(150.25m, result.Value);
+        }
+
+        [Test]
+        public void UniverseReader_PreservesExplicitFileDate()
+        {
+            var factory = new QuiverInsiderTradingUniverse();
+            var line = "AAPL R735QTJ8XC9X,AAPL,20260507093000,20260507,P,150.25,100,500,A,D,John Smith,CEO,T,T,F,";
+
+            var result = (QuiverInsiderTradingUniverse)factory.Reader(null, line, new DateTime(2026, 5, 8), false);
+
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
+            Assert.AreEqual(new DateTime(2026, 5, 7, 9, 30, 0), result.FileDate);
         }
 
         [Test]
