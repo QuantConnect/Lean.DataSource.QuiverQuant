@@ -72,7 +72,7 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.AreEqual(symbol, result.Symbol);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
             Assert.AreEqual(new DateTime(2026, 5, 8), result.EndTime);
-            Assert.AreEqual(new DateTime(2026, 5, 6), result.AdviceDate);
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.AdviceDate);
             Assert.AreEqual(OrderDirection.Buy, result.Direction);
             Assert.AreEqual("Jim Cramer", result.Traders);
             Assert.AreEqual("catalyst", result.Notes);
@@ -121,10 +121,23 @@ namespace QuantConnect.DataLibrary.Tests
 
             Assert.AreEqual("AAPL", result.Symbol.Value);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
-            Assert.AreEqual(new DateTime(2026, 5, 6), result.AdviceDate);
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.AdviceDate);
             Assert.AreEqual(OrderDirection.Buy, result.Direction);
             Assert.AreEqual("Jim Cramer", result.Traders);
             Assert.AreEqual("catalyst", result.Notes);
+        }
+
+        [Test]
+        public void UniverseReader_EmptyAdviceDateFallsBackToDateMinusOne()
+        {
+            var factory = new QuiverCNBCsUniverse();
+            var line = "AAPL R735QTJ8XC9X,AAPL,,1,Steve Weiss,";
+
+            var result = (QuiverCNBCsUniverse)factory.Reader(null, line, new DateTime(2026, 5, 8), false);
+
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.AdviceDate);
+            Assert.AreEqual(OrderDirection.Sell, result.Direction);
         }
 
         private static SubscriptionDataConfig CreateConfig(Symbol symbol)
