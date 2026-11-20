@@ -75,7 +75,7 @@ namespace QuantConnect.DataSource
             {
                 Symbol = config.Symbol,
                 Time = uploadedDate.AddDays(-1),
-                AdviceDate = (csv[1].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? uploadedDate).AddDays(-1),
+                AdviceDate = csv[1].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? uploadedDate.AddDays(-1),
                 Direction = QuiverQuant.QuiverQuantCsvExtensions.ToOrderDirection(csv[2]),
                 Traders = csv[3],
                 Notes = csv.Length > 4 ? csv[4] : string.Empty,

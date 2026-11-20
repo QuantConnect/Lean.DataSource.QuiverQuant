@@ -93,7 +93,7 @@ namespace QuantConnect.DataSource
             {
                 Symbol = new Symbol(SecurityIdentifier.Parse(csv[0]), csv[1]),
                 Time = date.AddDays(-1),
-                AdviceDate = (csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? date).AddDays(-1),
+                AdviceDate = csv[2].IfNotNullOrEmpty<DateTime?>(s => Parse.DateTimeExact(s, "yyyyMMdd")) ?? date.AddDays(-1),
                 Direction = QuiverQuant.QuiverQuantCsvExtensions.ToOrderDirection(csv[3]),
                 Traders = csv[4],
                 Notes = csv.Length > 5 ? csv[5] : string.Empty,
