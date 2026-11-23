@@ -78,19 +78,21 @@ namespace QuantConnect.DataLibrary.Tests
             Assert.IsNull(result.IsOther);
         }
 
-        [Test]
-        public void Reader_EmptyFileDateFallsBackToUploadedMinusOne()
+        // The downloader leaves csv[1] (fileDate) empty when the filing is on the upload day or its date is unknown
+        [TestCase("20260508,,20260507,S,275,1534,13366,D,D,Jane Doe,CFO,,T,,", TestName = "Reader_EmptyFileDateFallsBackToUploadedDate")]
+        [TestCase("20260508,,20260507,P,150.25,100,500,A,D,CEO,T,T,F,", TestName = "Reader_EmptyFileDateFallsBackToUploadedDateInLegacyRow")]
+        public void Reader_EmptyFileDateFallsBackToUploadedDate(string line)
         {
             var symbol = new Symbol(SecurityIdentifier.Parse("AAPL R735QTJ8XC9X"), "AAPL");
             var config = CreateConfig(symbol);
             var factory = new QuiverInsiderTrading();
-            // csv[1] (fileDate) is empty — Reader uses uploadedDate.AddDays(-1)
-            var line = "20260508,,20260507,S,275,1534,13366,D,D,Jane Doe,CFO,,T,,";
 
             var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
 
-            Assert.AreEqual(new DateTime(2026, 5, 7), result.FileDate);
+            Assert.AreEqual(new DateTime(2026, 5, 8), result.FileDate);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
+            Assert.AreEqual(new DateTime(2026, 5, 8), result.EndTime);
+            Assert.AreEqual(new DateTime(2026, 5, 7), result.Date);
         }
 
         [Test]
@@ -105,7 +107,7 @@ namespace QuantConnect.DataLibrary.Tests
             var result = (QuiverInsiderTrading)factory.Reader(config, line, new DateTime(2026, 5, 8), false);
 
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Date);
-            Assert.AreEqual(new DateTime(2026, 5, 7), result.FileDate);
+            Assert.AreEqual(new DateTime(2026, 5, 8), result.FileDate);
         }
 
         [Test]
@@ -142,7 +144,8 @@ namespace QuantConnect.DataLibrary.Tests
 
             Assert.AreEqual("AAPL", result.Symbol.Value);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Time);
-            Assert.AreEqual(new DateTime(2026, 5, 7), result.FileDate);
+            Assert.AreEqual(new DateTime(2026, 5, 8), result.EndTime);
+            Assert.AreEqual(new DateTime(2026, 5, 8), result.FileDate);
             Assert.AreEqual(new DateTime(2026, 5, 7), result.Date);
             Assert.AreEqual(TransactionCode.Purchase, result.TransactionCode);
             Assert.AreEqual(150.25m, result.PricePerShare);
