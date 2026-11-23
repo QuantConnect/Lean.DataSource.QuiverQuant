@@ -117,7 +117,7 @@ namespace QuantConnect.DataProcessing
                     }
 
                     var uploadedDate = insiderTrade.Uploaded.Value.Date;
-                    // Omit fileDate when its calendar day matches uploaded. Reader falls back to uploadedDate,
+                    // Omit fileDate when it is unknown or its calendar day matches uploaded. Reader falls back to uploadedDate,
                     // preserving the day but dropping intraday precision (acceptable trade-off for storage).
                     var fileDate = insiderTrade.FileDate == default || insiderTrade.FileDate.Date == uploadedDate
                         ? string.Empty
